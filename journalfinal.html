@@ -586,6 +586,10 @@ const MONTH_NAMES_FULL = {
   en: ["January","February","March","April","May","June","July","August","September","October","November","December"]
 };
 const WEEKDAY_LETTERS = { es: ['L','M','X','J','V','S','D'], en: ['M','T','W','T','F','S','S'] };
+const SETUP_DEFAULTS = {
+  es: ["Rebote AVWAP", "Pullback EMA", "Rotura Momentum", "6/20"],
+  en: ["AVWAP Bounce", "EMA Pullback", "Momentum Breakout", "6/20"]
+};
 
 function i18n(key, vars) {
   let s = (I18N[lang] && I18N[lang][key]) || (I18N.es && I18N.es[key]) || key;
@@ -874,7 +878,7 @@ function refreshApp() {
 
 function updateSetupOptions() {
   const datalist = document.getElementById('setup-list');
-  const defaults = ["Rebote AVWAP", "Pullback EMA", "Rotura Momentum", "6/20"];
+  const defaults = SETUP_DEFAULTS[lang];
   const used = trades.map(t => t.setup).filter(s => s && s.trim() !== "");
   const seen = new Map();
   [...defaults, ...used].forEach(s => {
