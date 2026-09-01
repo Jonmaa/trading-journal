@@ -89,6 +89,13 @@
   .cal-day.win { border-color: rgba(87,185,138,0.3); background: var(--green-dim); color: var(--green); }
   .cal-day.loss { border-color: rgba(199,84,80,0.3); background: var(--red-dim); color: var(--red); }
 
+  .cal-layout { display: flex; align-items: flex-start; gap: 1.5rem; }
+  .cal-grid { flex: 1 1 auto; }
+  .cal-week-col { flex: 0 0 92px; display: flex; flex-direction: column; gap: 8px; padding-left: 1.5rem; border-left: 1px solid var(--border); }
+  .cal-week-header { text-align: center; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin-bottom: 5px; }
+  .cal-week-cell { background: var(--bg-secondary); border: 1px solid var(--border-subtle); border-radius: 8px; min-height: 80px; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 13px; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
+  .cal-week-cell--empty { color: var(--text-muted); font-weight: 500; }
+
   /* ─── BUTTONS & UTILS ─── */
   .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
   .btn { display: inline-flex; align-items: center; gap: 7px; padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; border: none; font-family: var(--sans); }
@@ -135,6 +142,8 @@
   .upload-text { font-size: 12.5px; color: var(--text-secondary); line-height: 1.5; }
   .upload-preview { width: 100%; max-height: 200px; object-fit: cover; border-radius: 6px; display: none; margin-top: 10px; }
   .modal-footer { padding: 1rem 1.75rem; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; }
+  .modal.modal-sm { width: 480px; }
+  .notes-modal-text { color: var(--text-primary); font-size: 13.5px; line-height: 1.65; white-space: pre-wrap; }
 
   .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 300; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; }
   .lightbox.open { opacity: 1; pointer-events: all; }
@@ -270,16 +279,23 @@
 
   <!-- PESTAÑA 3: CALENDARIO -->
   <div id="tab-calendar" class="tab-content">
-    <div class="panel-card" style="max-width: 900px; margin: 0 auto;">
+    <div class="panel-card" style="max-width: 1060px; margin: 0 auto;">
       <div class="panel-header">
         <span class="panel-title">Calendario de Resultados</span>
         <div class="cal-controls">
+          <div class="mode-toggle">
+            <button class="mode-btn active" id="cal-mode-btn-usd" onclick="setCalendarMode('usd')">$ Dólares</button>
+            <button class="mode-btn" id="cal-mode-btn-r" onclick="setCalendarMode('r')">R Múltiplos</button>
+          </div>
           <button onclick="changeMonth(-1)">←</button>
           <span class="cal-month-label" id="calMonthLabel">Mes Año</span>
           <button onclick="changeMonth(1)">→</button>
         </div>
       </div>
-      <div class="cal-grid" id="calendarGrid"></div>
+      <div class="cal-layout">
+        <div class="cal-grid" id="calendarGrid"></div>
+        <div class="cal-week-col" id="calendarWeekCol"></div>
+      </div>
     </div>
   </div>
 
@@ -360,6 +376,22 @@
 <div class="lightbox" id="lightbox" onclick="closeLightbox()">
   <button class="lightbox-close" onclick="closeLightbox()">✕ Cerrar</button>
   <img id="lightboxImg" src="" alt="">
+</div>
+
+<!-- ─── MODAL DE NOTAS ─── -->
+<div class="modal-overlay" id="notesModal" onclick="closeNotesModalIfOverlay(event)">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <h3 style="font-size:15px;" id="notesModalTitle">Notas</h3>
+      <button class="action-btn" onclick="closeNotesModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="notes-modal-text" id="notesModalBody"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeNotesModal()">Cerrar</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -549,6 +581,7 @@ let computedTrades = [];
 let editingId = null;
 let currentImage = null;
 let statsMode = 'usd'; // 'usd' | 'r' — controla si el tab Rendimiento se ve en $ o en R
+let calendarMode = 'usd'; // 'usd' | 'r' — controla si el tab Calendario se ve en $ o en R
 
 const calDate = new Date();
 let currentMonth = calDate.getMonth();
@@ -815,31 +848,80 @@ function changeMonth(dir) {
   renderCalendar();
 }
 
+function setCalendarMode(mode) {
+  calendarMode = mode;
+  document.getElementById('cal-mode-btn-usd').classList.toggle('active', mode === 'usd');
+  document.getElementById('cal-mode-btn-r').classList.toggle('active', mode === 'r');
+  renderCalendar();
+}
+
 function renderCalendar() {
   document.getElementById('calMonthLabel').textContent = `${fullMonthNames[currentMonth]} ${currentYear}`;
   const grid = document.getElementById('calendarGrid');
+  const weekCol = document.getElementById('calendarWeekCol');
   grid.innerHTML = ['L','M','X','J','V','S','D'].map(d => `<div class="cal-header-day">${d}</div>`).join('');
-  
+  weekCol.innerHTML = `<div class="cal-week-header">${calendarMode === 'r' ? 'R sem.' : '$ sem.'}</div>`;
+
   const firstDay = new Date(currentYear, currentMonth, 1).getDay();
-  const emptyDays = firstDay === 0 ? 6 : firstDay - 1; 
+  const emptyDaysStart = firstDay === 0 ? 6 : firstDay - 1;
   const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
 
-  for (let i = 0; i < emptyDays; i++) grid.innerHTML += `<div class="cal-day empty"></div>`;
+  // Celdas del mes en una lista plana: null = relleno (antes del día 1 o después del último día)
+  const cells = [];
+  for (let i = 0; i < emptyDaysStart; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  while (cells.length % 7 !== 0) cells.push(null); // completa la última semana para alinear la columna semanal
 
-  for (let i = 1; i <= daysInMonth; i++) {
-    const dStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
-    const dayTrades = computedTrades.filter(t => t.date === dStr && t.pnl !== '' && t.pnl !== null);
-    
-    if (dayTrades.length > 0) {
-      const dayPnl = dayTrades.reduce((sum, t) => sum + parseFloat(t.pnl), 0);
-      const cls = dayPnl > 0 ? 'win' : (dayPnl < 0 ? 'loss' : 'neutral');
-      const prefix = dayPnl > 0 ? '+' : '';
-      grid.innerHTML += `<div class="cal-day ${cls}">
-        <div class="cal-day-num">${i}</div>
-        <div class="cal-day-pnl">${prefix}$${fmt(Math.abs(dayPnl))}</div>
-      </div>`;
+  // Agrupa en semanas de 7 días y añade, por semana, el resumen en la columna lateral
+  for (let w = 0; w < cells.length; w += 7) {
+    const week = cells.slice(w, w + 7);
+    let weekTotal = 0;
+    let weekHasData = false;
+
+    week.forEach(dayNum => {
+      if (dayNum === null) {
+        grid.innerHTML += `<div class="cal-day empty"></div>`;
+        return;
+      }
+      const dStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+      const dayTrades = computedTrades.filter(t => t.date === dStr && t.pnl !== '' && t.pnl !== null);
+
+      if (calendarMode === 'r') {
+        const rs = dayTrades.map(t => calcRMultiple(t)).filter(r => r !== null);
+        if (rs.length > 0) {
+          const dayR = rs.reduce((sum, r) => sum + r, 0);
+          weekTotal += dayR; weekHasData = true;
+          const cls = dayR > 0 ? 'win' : (dayR < 0 ? 'loss' : 'neutral');
+          const prefix = dayR > 0 ? '+' : '';
+          grid.innerHTML += `<div class="cal-day ${cls}">
+            <div class="cal-day-num">${dayNum}</div>
+            <div class="cal-day-pnl">${prefix}${fmt(dayR)}R</div>
+          </div>`;
+        } else {
+          grid.innerHTML += `<div class="cal-day"><div class="cal-day-num">${dayNum}</div></div>`;
+        }
+      } else {
+        if (dayTrades.length > 0) {
+          const dayPnl = dayTrades.reduce((sum, t) => sum + parseFloat(t.pnl), 0);
+          weekTotal += dayPnl; weekHasData = true;
+          const cls = dayPnl > 0 ? 'win' : (dayPnl < 0 ? 'loss' : 'neutral');
+          const prefix = dayPnl > 0 ? '+' : '';
+          grid.innerHTML += `<div class="cal-day ${cls}">
+            <div class="cal-day-num">${dayNum}</div>
+            <div class="cal-day-pnl">${prefix}$${fmt(Math.abs(dayPnl))}</div>
+          </div>`;
+        } else {
+          grid.innerHTML += `<div class="cal-day"><div class="cal-day-num">${dayNum}</div></div>`;
+        }
+      }
+    });
+
+    if (weekHasData) {
+      const prefix = weekTotal > 0 ? '+' : '';
+      const text = calendarMode === 'r' ? `${prefix}${fmt(weekTotal)}R` : `${prefix}$${fmt(Math.abs(weekTotal))}`;
+      weekCol.innerHTML += `<div class="cal-week-cell" style="color:var(--${pnlColorVar(weekTotal)})">${text}</div>`;
     } else {
-      grid.innerHTML += `<div class="cal-day"><div class="cal-day-num">${i}</div></div>`;
+      weekCol.innerHTML += `<div class="cal-week-cell cal-week-cell--empty">—</div>`;
     }
   }
 }
@@ -893,10 +975,14 @@ function closeLightbox() { document.getElementById('lightbox').classList.remove(
 
 function showNotes(id) {
   const t = trades.find(tr => tr.id === id);
-  if (t && t.notes) {
-    alert(`Notas — ${t.symbol} (${formatDate(t.date)}):\n\n${t.notes}`);
-  }
+  if (!t || !t.notes) return;
+  document.getElementById('notesModalTitle').textContent = `Notas — ${t.symbol} (${formatDate(t.date)})`;
+  document.getElementById('notesModalBody').textContent = t.notes;
+  document.getElementById('notesModal').classList.add('open');
 }
+
+function closeNotesModal() { document.getElementById('notesModal').classList.remove('open'); }
+function closeNotesModalIfOverlay(e) { if (e.target.id === 'notesModal') closeNotesModal(); }
 
 function openAddModal() {
   editingId = null;
