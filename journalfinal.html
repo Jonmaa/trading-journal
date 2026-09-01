@@ -156,9 +156,13 @@
     <span class="logo-text">Trading <span>Diary</span></span>
   </div>
   <div class="header-meta">
-    <button class="btn btn-ghost" style="padding:6px 12px; font-size:11px;" onclick="exportData()">⬇ Exportar</button>
+    <div class="mode-toggle" id="lang-toggle">
+      <button class="mode-btn active" id="lang-btn-es" onclick="applyLanguage('es')">ES</button>
+      <button class="mode-btn" id="lang-btn-en" onclick="applyLanguage('en')">EN</button>
+    </div>
+    <button class="btn btn-ghost" style="padding:6px 12px; font-size:11px;" onclick="exportData()">⬇ <span id="txt-export">Exportar</span></button>
     <label class="btn btn-ghost" style="padding:6px 12px; font-size:11px; cursor:pointer; margin:0;">
-      ⬆ Importar
+      ⬆ <span id="txt-import">Importar</span>
       <input type="file" accept="application/json" style="display:none;" onchange="importData(event)">
     </label>
     <span id="currentDate">—</span>
@@ -176,24 +180,24 @@
   <!-- PESTAÑA 1: HISTORIAL -->
   <div id="tab-journal" class="tab-content active">
     <div class="section-header">
-      <h2 style="font-size: 16px; font-weight: 600;">Tus Operaciones</h2>
-      <button class="btn btn-primary" onclick="openAddModal()">+ Nuevo Trade</button>
+      <h2 style="font-size: 16px; font-weight: 600;" id="h-operations">Tus Operaciones</h2>
+      <button class="btn btn-primary" id="btn-new-trade" onclick="openAddModal()">+ Nuevo Trade</button>
     </div>
     <div class="table-wrapper">
       <table class="trade-table">
         <thead>
           <tr>
-            <th>Fecha</th>
-            <th>Activo</th>
-            <th>Dir.</th>
-            <th>Patrón / Setup</th>
-            <th>Entrada</th>
-            <th>Stop</th>
-            <th>Salida</th>
-            <th>Resultado (R)</th>
-            <th>P&L $</th>
-            <th>Foto</th>
-            <th>Acción</th>
+            <th id="th-date">Fecha</th>
+            <th id="th-symbol">Activo</th>
+            <th id="th-dir">Dir.</th>
+            <th id="th-setup">Patrón / Setup</th>
+            <th id="th-entry">Entrada</th>
+            <th id="th-stop">Stop</th>
+            <th id="th-exit">Salida</th>
+            <th id="th-result">Resultado (R)</th>
+            <th id="th-pnl">P&L $</th>
+            <th id="th-photo">Foto</th>
+            <th id="th-action">Acción</th>
           </tr>
         </thead>
         <tbody id="tradeTableBody"></tbody>
@@ -213,12 +217,12 @@
       <!-- Grupo 1: Capital -->
       <div class="stat-group">
         <div class="stat-card">
-          <button class="edit-capital-btn" onclick="configurarCapital()">Editar</button>
-          <div class="stat-label">Capital Inicial Base</div>
+          <button class="edit-capital-btn" id="btn-edit-capital" onclick="configurarCapital()">Editar</button>
+          <div class="stat-label" id="label-initial-cap">Capital Inicial Base</div>
           <div class="stat-value neutral" id="stat-initial-cap">—</div>
         </div>
         <div class="stat-card">
-          <div class="stat-label">Capital Actual</div>
+          <div class="stat-label" id="label-current-cap">Capital Actual</div>
           <div class="stat-value neutral" id="stat-current-cap">—</div>
         </div>
       </div>
@@ -240,11 +244,11 @@
       <!-- Grupo 3: Estadísticas -->
       <div class="stat-group">
         <div class="stat-card">
-          <div class="stat-label">Win Rate</div>
+          <div class="stat-label" id="label-winrate">Win Rate</div>
           <div class="stat-value neutral" id="stat-winrate">—</div>
         </div>
         <div class="stat-card">
-          <div class="stat-label">Racha Actual</div>
+          <div class="stat-label" id="label-streak">Racha Actual</div>
           <div class="stat-value neutral" id="stat-streak">—</div>
         </div>
       </div>
@@ -253,12 +257,12 @@
     <!-- Tabla Mensual y Gráfico -->
     <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 1.5rem; margin-top: 1.5rem;">
       <div class="panel-card">
-        <div class="panel-title" style="margin-bottom:1rem;">Desglose Mensual</div>
+        <div class="panel-title" style="margin-bottom:1rem;" id="label-monthly-breakdown">Desglose Mensual</div>
         <div class="table-wrapper">
           <table class="trade-table">
             <thead>
               <tr>
-                <th>Mes</th>
+                <th id="col-monthly-1">Mes</th>
                 <th id="col-monthly-2">Neto ($)</th>
                 <th id="col-monthly-3">Rentabilidad (%)</th>
               </tr>
@@ -278,7 +282,7 @@
   <div id="tab-calendar" class="tab-content">
     <div class="panel-card" style="max-width: 1040px; margin: 0 auto;">
       <div class="panel-header">
-        <span class="panel-title">Calendario de Resultados</span>
+        <span class="panel-title" id="label-calendar-title">Calendario de Resultados</span>
         <div class="cal-controls">
           <div class="mode-toggle">
             <button class="mode-btn active" id="cal-mode-btn-usd" onclick="setCalendarMode('usd')">$ Dólares</button>
@@ -299,21 +303,21 @@
 <div class="modal-overlay" id="addModal" onclick="closeModalIfOverlay(event)">
   <div class="modal">
     <div class="modal-header">
-      <h3 style="font-size:16px;">Registrar Operación</h3>
+      <h3 style="font-size:16px;" id="modalTitle">Registrar Operación</h3>
       <button class="action-btn" onclick="closeAddModal()">✕</button>
     </div>
     <div class="modal-body">
       <div class="form-grid">
         <div class="form-group">
-          <label class="form-label">Fecha</label>
+          <label class="form-label" id="lbl-date">Fecha</label>
           <input type="date" class="form-input" id="f-date">
         </div>
         <div class="form-group">
-          <label class="form-label">Símbolo (Ej: NQ)</label>
+          <label class="form-label" id="lbl-symbol">Símbolo (Ej: NQ)</label>
           <input type="text" class="form-input" id="f-symbol" style="text-transform:uppercase;">
         </div>
         <div class="form-group">
-          <label class="form-label">Dirección</label>
+          <label class="form-label" id="lbl-direction">Dirección</label>
           <select class="form-select" id="f-direction">
             <option value="LONG">Long</option>
             <option value="SHORT">Short</option>
@@ -321,12 +325,12 @@
         </div>
 
         <div class="form-group">
-          <label class="form-label">Patrón / Setup</label>
+          <label class="form-label" id="lbl-setup">Patrón / Setup</label>
           <input type="text" class="form-input" id="f-setup" list="setup-list" placeholder="Elige o escribe uno nuevo...">
           <datalist id="setup-list"></datalist>
         </div>
         <div class="form-group">
-          <label class="form-label">P&L Final Realizado ($)</label>
+          <label class="form-label" id="lbl-pnl">P&L Final Realizado ($)</label>
           <input type="number" class="form-input" id="f-pnl" step="0.01">
         </div>
         <div class="form-group">
@@ -334,24 +338,24 @@
         </div>
 
         <div class="form-group">
-          <label class="form-label">Precio de Entrada</label>
+          <label class="form-label" id="lbl-entry">Precio de Entrada</label>
           <input type="number" class="form-input" id="f-entry" step="0.01">
         </div>
         <div class="form-group">
-          <label class="form-label">Stop Loss Inicial</label>
+          <label class="form-label" id="lbl-stop">Stop Loss Inicial</label>
           <input type="number" class="form-input" id="f-stop" step="0.01">
         </div>
         <div class="form-group">
-          <label class="form-label">Precio de Salida</label>
+          <label class="form-label" id="lbl-exit">Precio de Salida</label>
           <input type="number" class="form-input" id="f-exit" step="0.01">
         </div>
 
         <div class="form-group full">
-          <label class="form-label">Notas (Gestión y emociones)</label>
+          <label class="form-label" id="lbl-notes">Notas (Gestión y emociones)</label>
           <textarea class="form-textarea" id="f-notes"></textarea>
         </div>
         <div class="form-group full">
-          <label class="form-label">Captura del Gráfico</label>
+          <label class="form-label" id="lbl-image">Captura del Gráfico</label>
           <div class="upload-zone" id="uploadZone" tabindex="0">
             <input type="file" accept="image/*" id="f-image" onchange="handleImageUpload(event)">
             <div class="upload-text" id="uploadText">Arrastra una imagen, haz clic para subirla, o pégala con Ctrl+V (⌘V) — copia la imagen en TradingView (icono de cámara → Copiar imagen) y pégala aquí</div>
@@ -361,14 +365,14 @@
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeAddModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="saveTrade()">Guardar Trade</button>
+      <button class="btn btn-ghost" id="btn-cancel" onclick="closeAddModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btn-save" onclick="saveTrade()">Guardar Trade</button>
     </div>
   </div>
 </div>
 
 <div class="lightbox" id="lightbox" onclick="closeLightbox()">
-  <button class="lightbox-close" onclick="closeLightbox()">✕ Cerrar</button>
+  <button class="lightbox-close" id="btn-lightbox-close" onclick="closeLightbox()">✕ Cerrar</button>
   <img id="lightboxImg" src="" alt="">
 </div>
 
@@ -383,7 +387,7 @@
       <p class="notes-modal-text" id="notesModalBody"></p>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeNotesModal()">Cerrar</button>
+      <button class="btn btn-ghost" id="btn-notes-close" onclick="closeNotesModal()">Cerrar</button>
     </div>
   </div>
 </div>
@@ -391,11 +395,13 @@
 <script>
 // Funciones de formateo numérico de estilo Español
 function fmt(num) {
-  return parseFloat(num).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const locale = lang === 'en' ? 'en-US' : 'es-ES';
+  return parseFloat(num).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function fmtPrice(num) {
   if (!num) return '—';
-  return parseFloat(num).toLocaleString('es-ES', { maximumFractionDigits: 5 });
+  const locale = lang === 'en' ? 'en-US' : 'es-ES';
+  return parseFloat(num).toLocaleString(locale, { maximumFractionDigits: 5 });
 }
 
 // Escapa texto de usuario antes de insertarlo como HTML (símbolo, setup, notas en datalist)
@@ -407,6 +413,186 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+// ─── Internacionalización (ES/EN) ───
+let lang = localStorage.getItem('tradelog_lang') || 'es';
+
+const I18N = {
+  es: {
+    app_title: "Trading Diary — Journal del Trader",
+    export: "Exportar",
+    import: "Importar",
+    tab_journal: "Historial",
+    tab_stats: "Rendimiento",
+    tab_calendar: "Calendario",
+    your_trades: "Tus Operaciones",
+    new_trade: "Nuevo Trade",
+    th_date: "Fecha",
+    th_symbol: "Activo",
+    th_dir: "Dir.",
+    th_setup: "Patrón / Setup",
+    th_entry: "Entrada",
+    th_stop: "Stop",
+    th_exit: "Salida",
+    th_result: "Resultado (R)",
+    th_pnl: "P&L $",
+    th_photo: "Foto",
+    th_action: "Acción",
+    no_trades: "Sin operaciones registradas.",
+    no_image: "Sin img",
+    dollars: "Dólares",
+    r_multiples: "Múltiplos",
+    edit: "Editar",
+    initial_capital: "Capital Inicial Base",
+    current_capital: "Capital Actual",
+    ytd_return: "Rentabilidad YTD",
+    ytd_r: "R Total YTD",
+    current_month: "Mes Actual",
+    month_r: "R del Mes",
+    win_rate: "Win Rate",
+    current_streak: "Racha Actual",
+    monthly_breakdown: "Desglose Mensual",
+    month: "Mes",
+    net_usd: "Neto ($)",
+    return_pct: "Rentabilidad (%)",
+    r_total: "R Total",
+    r_avg: "R Promedio",
+    equity_curve: "Curva de Equidad",
+    r_curve: "Curva de R Acumulada",
+    no_data: "Sin datos",
+    trades_with_r_year: "{n} operaciones con R este año",
+    trades_with_r_month: "{n} operaciones con R este mes",
+    net_ytd: "Neto YTD: ",
+    net_month: "Neto mes: ",
+    calendar_title: "Calendario de Resultados",
+    week_short_usd: "$ sem.",
+    week_short_r: "R sem.",
+    register_trade: "Registrar Operación",
+    date: "Fecha",
+    symbol_label: "Símbolo (Ej: NQ)",
+    direction: "Dirección",
+    setup_label: "Patrón / Setup",
+    setup_placeholder: "Elige o escribe uno nuevo...",
+    pnl_label: "P&L Final Realizado ($)",
+    entry_price: "Precio de Entrada",
+    stop_price: "Stop Loss Inicial",
+    exit_price: "Precio de Salida",
+    notes_label: "Notas (Gestión y emociones)",
+    chart_capture: "Captura del Gráfico",
+    upload_text: "Arrastra una imagen, haz clic para subirla, o pégala con Ctrl+V (⌘V) — copia la imagen en TradingView (icono de cámara → Copiar imagen) y pégala aquí",
+    cancel: "Cancelar",
+    save_trade: "Guardar Trade",
+    close: "Cerrar",
+    notes_title: "Notas",
+    corrupted_data: "No se pudieron leer tus operaciones guardadas (los datos parecían estar dañados). Se ha iniciado un historial vacío para que la app no se bloquee; tus datos originales siguen en el almacenamiento del navegador y no se han borrado.",
+    storage_full_trade: "No se pudo guardar el cambio: el almacenamiento del navegador está lleno o bloqueado. Esta operación NO se ha guardado — considera exportar tus datos y liberar espacio (p.ej. capturas de pantalla grandes).",
+    storage_full_capital: "No se pudo guardar el capital inicial (almacenamiento lleno o bloqueado). El valor no se ha guardado.",
+    import_invalid_json: "El archivo no es un backup de Trading Diary válido (JSON inválido).",
+    import_invalid_format: "El archivo no tiene el formato esperado de un backup de Trading Diary.",
+    import_confirm: "Se importarán {n} operaciones y sustituirán tu historial actual. ¿Continuar?",
+    import_done: "Importación completada.",
+    capital_prompt: "Introduce tu Capital Inicial Base (ej. 10100 o 10100,50):",
+    capital_invalid: "Por favor, introduce un número válido sin formato raro.",
+    symbol_required: "El símbolo es obligatorio.",
+    confirm_delete: "¿Seguro que quieres borrar este trade?"
+  },
+  en: {
+    app_title: "Trading Diary — Trader's Journal",
+    export: "Export",
+    import: "Import",
+    tab_journal: "History",
+    tab_stats: "Performance",
+    tab_calendar: "Calendar",
+    your_trades: "Your Trades",
+    new_trade: "New Trade",
+    th_date: "Date",
+    th_symbol: "Symbol",
+    th_dir: "Dir.",
+    th_setup: "Pattern / Setup",
+    th_entry: "Entry",
+    th_stop: "Stop",
+    th_exit: "Exit",
+    th_result: "Result (R)",
+    th_pnl: "P&L $",
+    th_photo: "Chart",
+    th_action: "Action",
+    no_trades: "No trades recorded.",
+    no_image: "No image",
+    dollars: "Dollars",
+    r_multiples: "Multiples",
+    edit: "Edit",
+    initial_capital: "Initial Base Capital",
+    current_capital: "Current Capital",
+    ytd_return: "YTD Return",
+    ytd_r: "YTD Total R",
+    current_month: "Current Month",
+    month_r: "Month R",
+    win_rate: "Win Rate",
+    current_streak: "Current Streak",
+    monthly_breakdown: "Monthly Breakdown",
+    month: "Month",
+    net_usd: "Net ($)",
+    return_pct: "Return (%)",
+    r_total: "Total R",
+    r_avg: "Avg R",
+    equity_curve: "Equity Curve",
+    r_curve: "Cumulative R Curve",
+    no_data: "No data",
+    trades_with_r_year: "{n} trades with R this year",
+    trades_with_r_month: "{n} trades with R this month",
+    net_ytd: "Net YTD: ",
+    net_month: "Net month: ",
+    calendar_title: "Results Calendar",
+    week_short_usd: "$ wk",
+    week_short_r: "R wk",
+    register_trade: "Record Trade",
+    date: "Date",
+    symbol_label: "Symbol (e.g. NQ)",
+    direction: "Direction",
+    setup_label: "Pattern / Setup",
+    setup_placeholder: "Choose or type a new one...",
+    pnl_label: "Final Realized P&L ($)",
+    entry_price: "Entry Price",
+    stop_price: "Initial Stop Loss",
+    exit_price: "Exit Price",
+    notes_label: "Notes (Management & emotions)",
+    chart_capture: "Chart Screenshot",
+    upload_text: "Drag an image, click to upload it, or paste with Ctrl+V (⌘V) — copy the image in TradingView (camera icon → Copy image) and paste it here",
+    cancel: "Cancel",
+    save_trade: "Save Trade",
+    close: "Close",
+    notes_title: "Notes",
+    corrupted_data: "Your saved trades couldn't be read (the data appeared to be corrupted). An empty history has been started so the app doesn't break; your original data is still in the browser's storage and has not been deleted.",
+    storage_full_trade: "The change couldn't be saved: the browser's storage is full or blocked. This trade was NOT saved — consider exporting your data and freeing up space (e.g. large screenshots).",
+    storage_full_capital: "The initial capital couldn't be saved (storage full or blocked). The value was not saved.",
+    import_invalid_json: "The file isn't a valid Trading Diary backup (invalid JSON).",
+    import_invalid_format: "The file doesn't have the expected format of a Trading Diary backup.",
+    import_confirm: "{n} trades will be imported and will replace your current history. Continue?",
+    import_done: "Import completed.",
+    capital_prompt: "Enter your Initial Base Capital (e.g. 10100 or 10100.50):",
+    capital_invalid: "Please enter a valid number without unusual formatting.",
+    symbol_required: "Symbol is required.",
+    confirm_delete: "Are you sure you want to delete this trade?"
+  }
+};
+
+const MONTH_NAMES_SHORT = {
+  es: ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"],
+  en: ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+};
+const MONTH_NAMES_FULL = {
+  es: ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"],
+  en: ["January","February","March","April","May","June","July","August","September","October","November","December"]
+};
+const WEEKDAY_LETTERS = { es: ['L','M','X','J','V','S','D'], en: ['M','T','W','T','F','S','S'] };
+
+function i18n(key, vars) {
+  let s = (I18N[lang] && I18N[lang][key]) || (I18N.es && I18N.es[key]) || key;
+  if (vars) {
+    Object.keys(vars).forEach(k => { s = s.split('{' + k + '}').join(vars[k]); });
+  }
+  return s;
 }
 
 // Un único punto para decidir el color de un valor con signo (P&L, R, etc.)
@@ -480,7 +666,7 @@ function loadTrades() {
     return Array.isArray(parsed) ? parsed : [];
   } catch (e) {
     console.error('Error leyendo operaciones guardadas:', e);
-    alert('No se pudieron leer tus operaciones guardadas (los datos parecían estar dañados). Se ha iniciado un historial vacío para que la app no se bloquee; tus datos originales siguen en el almacenamiento del navegador y no se han borrado.');
+    alert(i18n('corrupted_data'));
     return [];
   }
 }
@@ -491,7 +677,7 @@ function saveTradesToStorage() {
     return true;
   } catch (e) {
     console.error('Error guardando operaciones:', e);
-    alert('No se pudo guardar el cambio: el almacenamiento del navegador está lleno o bloqueado. Esta operación NO se ha guardado — considera exportar tus datos y liberar espacio (p.ej. capturas de pantalla grandes).');
+    alert(i18n('storage_full_trade'));
     return false;
   }
 }
@@ -502,7 +688,7 @@ function saveCapitalToStorage(value) {
     return true;
   } catch (e) {
     console.error('Error guardando capital:', e);
-    alert('No se pudo guardar el capital inicial (almacenamiento lleno o bloqueado). El valor no se ha guardado.');
+    alert(i18n('storage_full_capital'));
     return false;
   }
 }
@@ -535,16 +721,16 @@ function importData(event) {
     try {
       payload = JSON.parse(ev.target.result);
     } catch (e) {
-      alert('El archivo no es un backup de Trading Diary válido (JSON inválido).');
+      alert(i18n('import_invalid_json'));
       event.target.value = '';
       return;
     }
     if (!payload || !Array.isArray(payload.trades)) {
-      alert('El archivo no tiene el formato esperado de un backup de Trading Diary.');
+      alert(i18n('import_invalid_format'));
       event.target.value = '';
       return;
     }
-    if (!confirm(`Se importarán ${payload.trades.length} operaciones y sustituirán tu historial actual. ¿Continuar?`)) {
+    if (!confirm(i18n('import_confirm', { n: payload.trades.length }))) {
       event.target.value = '';
       return;
     }
@@ -563,7 +749,7 @@ function importData(event) {
       return;
     }
     refreshApp();
-    alert('Importación completada.');
+    alert(i18n('import_done'));
     event.target.value = '';
   };
   reader.readAsText(file);
@@ -580,14 +766,84 @@ let calendarMode = 'usd'; // 'usd' | 'r' — controla si el tab Calendario se ve
 const calDate = new Date();
 let currentMonth = calDate.getMonth();
 let currentYear = calDate.getFullYear();
-const monthNames = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-const fullMonthNames = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+let monthNames = MONTH_NAMES_SHORT[lang];
+let fullMonthNames = MONTH_NAMES_FULL[lang];
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('f-date').value = new Date().toISOString().split('T')[0];
-  document.getElementById('currentDate').textContent = new Date().toLocaleDateString('es-ES', { weekday:'long', day:'numeric', month:'long' });
-  refreshApp();
+  applyLanguage(lang);
 });
+
+function updateHeaderDate() {
+  const locale = lang === 'en' ? 'en-US' : 'es-ES';
+  document.getElementById('currentDate').textContent = new Date().toLocaleDateString(locale, { weekday:'long', day:'numeric', month:'long' });
+}
+
+function applyLanguage(newLang) {
+  lang = newLang;
+  try { localStorage.setItem('tradelog_lang', lang); } catch (e) { console.error('Error guardando idioma:', e); }
+  document.documentElement.lang = lang;
+  monthNames = MONTH_NAMES_SHORT[lang];
+  fullMonthNames = MONTH_NAMES_FULL[lang];
+
+  document.getElementById('lang-btn-es').classList.toggle('active', lang === 'es');
+  document.getElementById('lang-btn-en').classList.toggle('active', lang === 'en');
+
+  document.title = i18n('app_title');
+  document.getElementById('txt-export').textContent = i18n('export');
+  document.getElementById('txt-import').textContent = i18n('import');
+  document.getElementById('btn-journal').textContent = '📖 ' + i18n('tab_journal');
+  document.getElementById('btn-stats').textContent = '📊 ' + i18n('tab_stats');
+  document.getElementById('btn-calendar').textContent = '📅 ' + i18n('tab_calendar');
+  document.getElementById('h-operations').textContent = i18n('your_trades');
+  document.getElementById('btn-new-trade').textContent = '+ ' + i18n('new_trade');
+  document.getElementById('th-date').textContent = i18n('th_date');
+  document.getElementById('th-symbol').textContent = i18n('th_symbol');
+  document.getElementById('th-dir').textContent = i18n('th_dir');
+  document.getElementById('th-setup').textContent = i18n('th_setup');
+  document.getElementById('th-entry').textContent = i18n('th_entry');
+  document.getElementById('th-stop').textContent = i18n('th_stop');
+  document.getElementById('th-exit').textContent = i18n('th_exit');
+  document.getElementById('th-result').textContent = i18n('th_result');
+  document.getElementById('th-pnl').textContent = i18n('th_pnl');
+  document.getElementById('th-photo').textContent = i18n('th_photo');
+  document.getElementById('th-action').textContent = i18n('th_action');
+
+  document.getElementById('mode-btn-usd').textContent = '$ ' + i18n('dollars');
+  document.getElementById('mode-btn-r').textContent = 'R ' + i18n('r_multiples');
+  document.getElementById('cal-mode-btn-usd').textContent = '$ ' + i18n('dollars');
+  document.getElementById('cal-mode-btn-r').textContent = 'R ' + i18n('r_multiples');
+
+  document.getElementById('btn-edit-capital').textContent = i18n('edit');
+  document.getElementById('label-initial-cap').textContent = i18n('initial_capital');
+  document.getElementById('label-current-cap').textContent = i18n('current_capital');
+  document.getElementById('label-winrate').textContent = i18n('win_rate');
+  document.getElementById('label-streak').textContent = i18n('current_streak');
+  document.getElementById('label-monthly-breakdown').textContent = i18n('monthly_breakdown');
+  document.getElementById('col-monthly-1').textContent = i18n('month');
+  document.getElementById('label-calendar-title').textContent = i18n('calendar_title');
+
+  document.getElementById('modalTitle').textContent = i18n('register_trade');
+  document.getElementById('lbl-date').textContent = i18n('date');
+  document.getElementById('lbl-symbol').textContent = i18n('symbol_label');
+  document.getElementById('lbl-direction').textContent = i18n('direction');
+  document.getElementById('lbl-setup').textContent = i18n('setup_label');
+  document.getElementById('lbl-pnl').textContent = i18n('pnl_label');
+  document.getElementById('lbl-entry').textContent = i18n('entry_price');
+  document.getElementById('lbl-stop').textContent = i18n('stop_price');
+  document.getElementById('lbl-exit').textContent = i18n('exit_price');
+  document.getElementById('lbl-notes').textContent = i18n('notes_label');
+  document.getElementById('lbl-image').textContent = i18n('chart_capture');
+  document.getElementById('f-setup').placeholder = i18n('setup_placeholder');
+  document.getElementById('uploadText').textContent = i18n('upload_text');
+  document.getElementById('btn-cancel').textContent = i18n('cancel');
+  document.getElementById('btn-save').textContent = i18n('save_trade');
+  document.getElementById('btn-lightbox-close').textContent = '✕ ' + i18n('close');
+  document.getElementById('btn-notes-close').textContent = i18n('close');
+
+  updateHeaderDate();
+  refreshApp();
+}
 
 function switchTab(tabId) {
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
@@ -635,7 +891,7 @@ function renderTable() {
   const sorted = [...computedTrades].reverse(); 
 
   if (!sorted.length) {
-    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; padding: 2rem; color:var(--text-muted)">Sin operaciones registradas.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; padding: 2rem; color:var(--text-muted)">${i18n('no_trades')}</td></tr>`;
     return;
   }
 
@@ -650,7 +906,7 @@ function renderTable() {
 
     const chartBtn = t.image 
       ? `<button class="thumb-btn" onclick="openLightbox('${t.id}')"><img src="${t.image}"></button>`
-      : `<span style="font-size:11px; opacity:0.5;">Sin img</span>`;
+      : `<span style="font-size:11px; opacity:0.5;">${i18n('no_image')}</span>`;
 
     return `<tr>
       <td class="cell-mono">${formatDate(t.date)}</td>
@@ -675,11 +931,12 @@ function renderTable() {
 function formatDate(d) {
   if (!d) return '—';
   const [y, m, day] = d.split('-');
-  return `${day}/${m}/${y.slice(2)}`;
+  const yy = y.slice(2);
+  return lang === 'en' ? `${m}/${day}/${yy}` : `${day}/${m}/${yy}`;
 }
 
 function configurarCapital() {
-  const input = prompt("Introduce tu Capital Inicial Base (ej. 10100 o 10100,50):", initialCapital);
+  const input = prompt(i18n('capital_prompt'), initialCapital);
   if (input !== null && input.trim() !== '') {
     const val = parseSpanishOrPlainNumber(input);
     if (!isNaN(val) && val > 0) {
@@ -688,7 +945,7 @@ function configurarCapital() {
       if (!saveCapitalToStorage(initialCapital)) { initialCapital = previous; return; }
       refreshApp();
     } else {
-      alert("Por favor, introduce un número válido sin formato raro.");
+      alert(i18n('capital_invalid'));
     }
   }
 }
@@ -700,10 +957,10 @@ function updateStats() {
   setEl('stat-initial-cap', `$${fmt(initialCapital)}`);
   setEl('stat-current-cap', `$${fmt(currentCap)}`);
 
-  document.getElementById('label-ytd').textContent = statsMode === 'r' ? 'R Total YTD' : 'Rentabilidad YTD';
-  document.getElementById('label-month').textContent = statsMode === 'r' ? 'R del Mes' : 'Mes Actual';
-  document.getElementById('col-monthly-2').textContent = statsMode === 'r' ? 'R Total' : 'Neto ($)';
-  document.getElementById('col-monthly-3').textContent = statsMode === 'r' ? 'R Promedio' : 'Rentabilidad (%)';
+  document.getElementById('label-ytd').textContent = statsMode === 'r' ? i18n('ytd_r') : i18n('ytd_return');
+  document.getElementById('label-month').textContent = statsMode === 'r' ? i18n('month_r') : i18n('current_month');
+  document.getElementById('col-monthly-2').textContent = statsMode === 'r' ? i18n('r_total') : i18n('net_usd');
+  document.getElementById('col-monthly-3').textContent = statsMode === 'r' ? i18n('r_avg') : i18n('return_pct');
 
   const dToday = new Date();
   const cYear = dToday.getFullYear();
@@ -749,14 +1006,14 @@ function updateStats() {
     });
 
     setEl('stat-ytd-pct', `${ytdR >= 0 ? '+' : ''}${fmt(ytdR)} R`, ytdR >= 0 ? 'positive' : 'negative');
-    document.getElementById('stat-ytd-sub').textContent = `${ytdCount} operaciones con R este año`;
+    document.getElementById('stat-ytd-sub').textContent = i18n('trades_with_r_year', { n: ytdCount });
 
     setEl('stat-month-pct', `${monthR >= 0 ? '+' : ''}${fmt(monthR)} R`, monthR >= 0 ? 'positive' : 'negative');
-    document.getElementById('stat-month-sub').textContent = `${monthCount} operaciones con R este mes`;
+    document.getElementById('stat-month-sub').textContent = i18n('trades_with_r_month', { n: monthCount });
 
     const sortedMonths = Object.keys(monthlyR).sort().reverse();
     if (sortedMonths.length === 0) {
-      mTable.innerHTML = `<tr><td colspan="3" style="text-align:center;color:var(--text-muted)">Sin datos</td></tr>`;
+      mTable.innerHTML = `<tr><td colspan="3" style="text-align:center;color:var(--text-muted)">${i18n('no_data')}</td></tr>`;
     } else {
       mTable.innerHTML = sortedMonths.map(key => {
         const data = monthlyR[key];
@@ -794,16 +1051,16 @@ function updateStats() {
 
   const ytdPct = (ytdPnl / initialCapital) * 100;
   setEl('stat-ytd-pct', `${ytdPct >= 0 ? '+' : ''}${fmt(ytdPct)}%`, ytdPct >= 0 ? 'positive' : 'negative');
-  document.getElementById('stat-ytd-sub').textContent = `Neto YTD: ${ytdPnl >= 0 ? '+' : '-'}$${fmt(Math.abs(ytdPnl))}`;
+  document.getElementById('stat-ytd-sub').textContent = `${i18n('net_ytd')}${ytdPnl >= 0 ? '+' : '-'}$${fmt(Math.abs(ytdPnl))}`;
 
   const monthPct = (monthPnl / initialCapital) * 100;
   setEl('stat-month-pct', `${monthPct >= 0 ? '+' : ''}${fmt(monthPct)}%`, monthPct >= 0 ? 'positive' : 'negative');
-  document.getElementById('stat-month-sub').textContent = `Neto mes: ${monthPnl >= 0 ? '+' : '-'}$${fmt(Math.abs(monthPnl))}`;
+  document.getElementById('stat-month-sub').textContent = `${i18n('net_month')}${monthPnl >= 0 ? '+' : '-'}$${fmt(Math.abs(monthPnl))}`;
 
   const sortedMonths = Object.keys(monthlyData).sort().reverse();
   
   if(sortedMonths.length === 0) {
-    mTable.innerHTML = `<tr><td colspan="3" style="text-align:center;color:var(--text-muted)">Sin datos</td></tr>`;
+    mTable.innerHTML = `<tr><td colspan="3" style="text-align:center;color:var(--text-muted)">${i18n('no_data')}</td></tr>`;
   } else {
     mTable.innerHTML = sortedMonths.map(key => {
       const data = monthlyData[key];
@@ -852,8 +1109,8 @@ function setCalendarMode(mode) {
 function renderCalendar() {
   document.getElementById('calMonthLabel').textContent = `${fullMonthNames[currentMonth]} ${currentYear}`;
   const grid = document.getElementById('calendarGrid');
-  const weekLabel = calendarMode === 'r' ? 'R sem.' : '$ sem.';
-  grid.innerHTML = ['L','M','X','J','V','S','D'].map(d => `<div class="cal-header-day">${d}</div>`).join('')
+  const weekLabel = calendarMode === 'r' ? i18n('week_short_r') : i18n('week_short_usd');
+  grid.innerHTML = WEEKDAY_LETTERS[lang].map(d => `<div class="cal-header-day">${d}</div>`).join('')
     + `<div class="cal-week-header">${weekLabel}</div>`;
 
   const firstDay = new Date(currentYear, currentMonth, 1).getDay();
@@ -975,7 +1232,7 @@ function closeLightbox() { document.getElementById('lightbox').classList.remove(
 function showNotes(id) {
   const t = trades.find(tr => tr.id === id);
   if (!t || !t.notes) return;
-  document.getElementById('notesModalTitle').textContent = `Notas — ${t.symbol} (${formatDate(t.date)})`;
+  document.getElementById('notesModalTitle').textContent = `${i18n('notes_title')} — ${t.symbol} (${formatDate(t.date)})`;
   document.getElementById('notesModalBody').textContent = t.notes;
   document.getElementById('notesModal').classList.add('open');
 }
@@ -1042,7 +1299,7 @@ function saveTrade() {
     image: currentImage
   };
 
-  if (!data.symbol) { alert('El símbolo es obligatorio.'); return; }
+  if (!data.symbol) { alert(i18n('symbol_required')); return; }
 
   if (editingId) {
     const idx = trades.findIndex(t => t.id === editingId);
@@ -1060,7 +1317,7 @@ function saveTrade() {
 }
 
 function deleteTrade(id) {
-  if (confirm('¿Seguro que quieres borrar este trade?')) {
+  if (confirm(i18n('confirm_delete'))) {
     const previous = trades;
     trades = trades.filter(t => t.id !== id);
     if (!saveTradesToStorage()) { trades = previous; return; }
@@ -1073,7 +1330,7 @@ function renderChart() {
   const ctx = canvas.getContext('2d');
   const closed = computedTrades.filter(t => t.pnl !== '' && t.pnl !== null);
 
-  document.getElementById('chart-title').textContent = statsMode === 'r' ? 'Curva de R Acumulada' : 'Curva de Equidad';
+  document.getElementById('chart-title').textContent = statsMode === 'r' ? i18n('r_curve') : i18n('equity_curve');
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
