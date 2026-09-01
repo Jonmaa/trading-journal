@@ -80,8 +80,9 @@
   .cal-controls { display: flex; align-items: center; gap: 15px; }
   .cal-controls button { background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-primary); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
   .cal-month-label { font-family: var(--mono); font-weight: 600; font-size: 16px; min-width: 140px; text-align: center; }
-  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+  .cal-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; }
   .cal-header-day { text-align: center; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin-bottom: 5px; }
+  .cal-week-header { text-align: center; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin-bottom: 5px; padding-left: 12px; border-left: 1px solid var(--border); }
   .cal-day { background: var(--bg-secondary); border: 1px solid var(--border-subtle); border-radius: 8px; min-height: 80px; padding: 8px; display: flex; flex-direction: column; }
   .cal-day.empty { background: transparent; border-color: transparent; }
   .cal-day-num { font-size: 12px; color: var(--text-muted); font-weight: 500; }
@@ -89,11 +90,7 @@
   .cal-day.win { border-color: rgba(87,185,138,0.3); background: var(--green-dim); color: var(--green); }
   .cal-day.loss { border-color: rgba(199,84,80,0.3); background: var(--red-dim); color: var(--red); }
 
-  .cal-layout { display: flex; align-items: flex-start; gap: 1.5rem; }
-  .cal-grid { flex: 1 1 auto; }
-  .cal-week-col { flex: 0 0 92px; display: flex; flex-direction: column; gap: 8px; padding-left: 1.5rem; border-left: 1px solid var(--border); }
-  .cal-week-header { text-align: center; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin-bottom: 5px; }
-  .cal-week-cell { background: var(--bg-secondary); border: 1px solid var(--border-subtle); border-radius: 8px; min-height: 80px; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 13px; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
+  .cal-week-cell { background: var(--bg-secondary); border: 1px solid var(--border-subtle); border-radius: 8px; min-height: 80px; padding: 8px; padding-left: 20px; border-left: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 13px; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
   .cal-week-cell--empty { color: var(--text-muted); font-weight: 500; }
 
   /* ─── BUTTONS & UTILS ─── */
@@ -279,7 +276,7 @@
 
   <!-- PESTAÑA 3: CALENDARIO -->
   <div id="tab-calendar" class="tab-content">
-    <div class="panel-card" style="max-width: 1060px; margin: 0 auto;">
+    <div class="panel-card" style="max-width: 1040px; margin: 0 auto;">
       <div class="panel-header">
         <span class="panel-title">Calendario de Resultados</span>
         <div class="cal-controls">
@@ -292,10 +289,7 @@
           <button onclick="changeMonth(1)">→</button>
         </div>
       </div>
-      <div class="cal-layout">
-        <div class="cal-grid" id="calendarGrid"></div>
-        <div class="cal-week-col" id="calendarWeekCol"></div>
-      </div>
+      <div class="cal-grid" id="calendarGrid"></div>
     </div>
   </div>
 
@@ -858,9 +852,9 @@ function setCalendarMode(mode) {
 function renderCalendar() {
   document.getElementById('calMonthLabel').textContent = `${fullMonthNames[currentMonth]} ${currentYear}`;
   const grid = document.getElementById('calendarGrid');
-  const weekCol = document.getElementById('calendarWeekCol');
-  grid.innerHTML = ['L','M','X','J','V','S','D'].map(d => `<div class="cal-header-day">${d}</div>`).join('');
-  weekCol.innerHTML = `<div class="cal-week-header">${calendarMode === 'r' ? 'R sem.' : '$ sem.'}</div>`;
+  const weekLabel = calendarMode === 'r' ? 'R sem.' : '$ sem.';
+  grid.innerHTML = ['L','M','X','J','V','S','D'].map(d => `<div class="cal-header-day">${d}</div>`).join('')
+    + `<div class="cal-week-header">${weekLabel}</div>`;
 
   const firstDay = new Date(currentYear, currentMonth, 1).getDay();
   const emptyDaysStart = firstDay === 0 ? 6 : firstDay - 1;
@@ -870,17 +864,20 @@ function renderCalendar() {
   const cells = [];
   for (let i = 0; i < emptyDaysStart; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-  while (cells.length % 7 !== 0) cells.push(null); // completa la última semana para alinear la columna semanal
+  while (cells.length % 7 !== 0) cells.push(null); // completa la última semana para que la fila tenga 7 días + 1 resumen
 
-  // Agrupa en semanas de 7 días y añade, por semana, el resumen en la columna lateral
+  // Agrupa en semanas de 7 días; cada semana escribe 7 celdas de día + 1 celda de
+  // resumen en la misma fila del grid de 8 columnas, así el resumen sale del
+  // mismo tamaño exacto que las celdas de día (son columnas del mismo grid).
   for (let w = 0; w < cells.length; w += 7) {
     const week = cells.slice(w, w + 7);
     let weekTotal = 0;
     let weekHasData = false;
+    let rowHtml = '';
 
     week.forEach(dayNum => {
       if (dayNum === null) {
-        grid.innerHTML += `<div class="cal-day empty"></div>`;
+        rowHtml += `<div class="cal-day empty"></div>`;
         return;
       }
       const dStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
@@ -893,12 +890,12 @@ function renderCalendar() {
           weekTotal += dayR; weekHasData = true;
           const cls = dayR > 0 ? 'win' : (dayR < 0 ? 'loss' : 'neutral');
           const prefix = dayR > 0 ? '+' : '';
-          grid.innerHTML += `<div class="cal-day ${cls}">
+          rowHtml += `<div class="cal-day ${cls}">
             <div class="cal-day-num">${dayNum}</div>
             <div class="cal-day-pnl">${prefix}${fmt(dayR)}R</div>
           </div>`;
         } else {
-          grid.innerHTML += `<div class="cal-day"><div class="cal-day-num">${dayNum}</div></div>`;
+          rowHtml += `<div class="cal-day"><div class="cal-day-num">${dayNum}</div></div>`;
         }
       } else {
         if (dayTrades.length > 0) {
@@ -906,12 +903,12 @@ function renderCalendar() {
           weekTotal += dayPnl; weekHasData = true;
           const cls = dayPnl > 0 ? 'win' : (dayPnl < 0 ? 'loss' : 'neutral');
           const prefix = dayPnl > 0 ? '+' : '';
-          grid.innerHTML += `<div class="cal-day ${cls}">
+          rowHtml += `<div class="cal-day ${cls}">
             <div class="cal-day-num">${dayNum}</div>
             <div class="cal-day-pnl">${prefix}$${fmt(Math.abs(dayPnl))}</div>
           </div>`;
         } else {
-          grid.innerHTML += `<div class="cal-day"><div class="cal-day-num">${dayNum}</div></div>`;
+          rowHtml += `<div class="cal-day"><div class="cal-day-num">${dayNum}</div></div>`;
         }
       }
     });
@@ -919,10 +916,12 @@ function renderCalendar() {
     if (weekHasData) {
       const prefix = weekTotal > 0 ? '+' : '';
       const text = calendarMode === 'r' ? `${prefix}${fmt(weekTotal)}R` : `${prefix}$${fmt(Math.abs(weekTotal))}`;
-      weekCol.innerHTML += `<div class="cal-week-cell" style="color:var(--${pnlColorVar(weekTotal)})">${text}</div>`;
+      rowHtml += `<div class="cal-week-cell" style="color:var(--${pnlColorVar(weekTotal)})">${text}</div>`;
     } else {
-      weekCol.innerHTML += `<div class="cal-week-cell cal-week-cell--empty">—</div>`;
+      rowHtml += `<div class="cal-week-cell cal-week-cell--empty">—</div>`;
     }
+
+    grid.innerHTML += rowHtml;
   }
 }
 
