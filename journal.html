@@ -90,6 +90,7 @@
   .cal-day { background: var(--bg-secondary); border: 1px solid var(--border-subtle); border-radius: 8px; min-height: 80px; padding: 8px; display: flex; flex-direction: column; }
   .cal-day.empty { background: transparent; border-color: transparent; }
   .cal-day-num { font-size: 12px; color: var(--text-muted); font-weight: 500; }
+  .cal-day-trades { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
   .cal-day-pnl { font-family: var(--mono); font-size: 14px; font-weight: 600; text-align: right; margin-top: auto; }
   .cal-day.win { border-color: rgba(87,185,138,0.3); background: var(--green-dim); color: var(--green); }
   .cal-day.loss { border-color: rgba(199,84,80,0.3); background: var(--red-dim); color: var(--red); }
@@ -522,6 +523,7 @@ const I18N = {
     one_r_hint: "1R = 1% del capital = {amount}",
     calendar_month_total_label: "Total del mes",
     calendar_month_total_empty: "Total del mes: \u2014",
+    cal_day_trades_count: "Trades: {n}",
     register_trade: "Registrar Operación",
     date: "Fecha",
     symbol_label: "Símbolo (Ej: NQ)",
@@ -614,6 +616,7 @@ const I18N = {
     one_r_hint: "1R = 1% of capital = {amount}",
     calendar_month_total_label: "This month's total",
     calendar_month_total_empty: "This month's total: \u2014",
+    cal_day_trades_count: "Trades: {n}",
     register_trade: "Record Trade",
     date: "Date",
     symbol_label: "Symbol (e.g. NQ)",
@@ -738,6 +741,13 @@ function calcFixedRForTrade(t) {
 function parseYearMonth(dateStr) {
   const [y, m] = dateStr.split('-');
   return { year: parseInt(y, 10), month: parseInt(m, 10) - 1 };
+}
+
+// Fecha "efectiva" de un trade para el Calendario: si se indicó una fecha de
+// cierre explícita, el P&L/R del trade se coloca ahí (el día en que se cerró
+// la operación), no en la fecha en la que se registró/abrió.
+function effectiveDate(t) {
+  return t.closeDate || t.date;
 }
 
 // Convierte un objeto Date (hora local) a "YYYY-MM-DD", igual que el resto
@@ -1397,7 +1407,7 @@ function setCalendarMode(mode) {
 function computeCalendarMonthTotal() {
   const monthTrades = computedTrades.filter(t => {
     if (t.pnl === '' || t.pnl === null) return false;
-    const { year, month } = parseYearMonth(t.date);
+    const { year, month } = parseYearMonth(effectiveDate(t));
     return year === currentYear && month === currentMonth;
   });
   if (calendarMode === 'r') {
@@ -1456,7 +1466,8 @@ function renderCalendar() {
         return;
       }
       const dStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
-      const dayTrades = computedTrades.filter(t => t.date === dStr && t.pnl !== '' && t.pnl !== null);
+      const dayTrades = computedTrades.filter(t => effectiveDate(t) === dStr && t.pnl !== '' && t.pnl !== null);
+      const dayTradesCountHtml = dayTrades.length > 0 ? `<div class="cal-day-trades">${i18n('cal_day_trades_count', { n: dayTrades.length })}</div>` : '';
 
       if (calendarMode === 'r') {
         const dayPnl = dayTrades.reduce((sum, t) => sum + parseFloat(t.pnl), 0);
@@ -1467,6 +1478,7 @@ function renderCalendar() {
           const prefix = dayR > 0 ? '+' : '';
           rowHtml += `<div class="cal-day ${cls}">
             <div class="cal-day-num">${dayNum}</div>
+            ${dayTradesCountHtml}
             <div class="cal-day-pnl">${prefix}${fmt(dayR)}R</div>
           </div>`;
         } else {
@@ -1480,6 +1492,7 @@ function renderCalendar() {
           const prefix = dayPnl > 0 ? '+' : '';
           rowHtml += `<div class="cal-day ${cls}">
             <div class="cal-day-num">${dayNum}</div>
+            ${dayTradesCountHtml}
             <div class="cal-day-pnl">${prefix}$${fmt(Math.abs(dayPnl))}</div>
           </div>`;
         } else {
@@ -1619,6 +1632,19 @@ function saveTrade() {
   };
 
   if (!data.symbol) { alert(i18n('symbol_required')); return; }
+
+  const previousTrade = editingId ? trades.find(t => t.id === editingId) : null;
+  const previousPnl = previousTrade ? previousTrade.pnl : '';
+  const pnlWasEmpty = previousPnl === '' || previousPnl === null || previousPnl === undefined;
+  const pnlIsFilled = data.pnl !== '' && data.pnl !== null;
+  if (pnlIsFilled && pnlWasEmpty) {
+    // El P&L se acaba de rellenar: si ya existía el trade (se estaba editando para
+    // cerrarlo), la fecha de cierre es hoy; si se crea y se cierra a la vez, se
+    // asume que el cierre es el mismo día indicado en "Fecha".
+    data.closeDate = previousTrade ? new Date().toISOString().split('T')[0] : data.date;
+  } else if (!pnlIsFilled) {
+    data.closeDate = '';
+  }
 
   if (editingId) {
     const idx = trades.findIndex(t => t.id === editingId);
