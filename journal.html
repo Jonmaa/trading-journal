@@ -78,6 +78,9 @@
   .panel-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.75rem; box-shadow: var(--shadow); }
   .panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
   .panel-title { font-size: 14px; font-weight: 600; color: var(--text-primary); text-transform: uppercase; letter-spacing: 0.05em; }
+  .cal-title-block { display: flex; flex-direction: column; gap: 4px; }
+  .cal-title-label { font-size: 11px; font-weight: 600; color: var(--text-muted); }
+  .cal-title-value { font-family: var(--mono); font-size: 26px; font-weight: 700; letter-spacing: -0.5px; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--text-primary); }
   .cal-controls { display: flex; align-items: center; gap: 15px; }
   .cal-controls button { background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-primary); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
   .cal-month-label { font-family: var(--mono); font-weight: 600; font-size: 16px; min-width: 140px; text-align: center; }
@@ -299,7 +302,10 @@
   <div id="tab-calendar" class="tab-content">
     <div class="panel-card" style="max-width: 1040px; margin: 0 auto;">
       <div class="panel-header">
-        <span class="panel-title" id="label-calendar-title">Calendario de Resultados</span>
+        <div class="cal-title-block">
+          <span class="cal-title-label" id="label-calendar-title">Calendario de Resultados</span>
+          <span class="cal-title-value" id="label-calendar-title-value">—</span>
+        </div>
         <div class="cal-controls">
           <div class="mode-toggle">
             <button class="mode-btn active" id="cal-mode-btn-usd" onclick="setCalendarMode('usd')">$ Dólares</button>
@@ -514,7 +520,7 @@ const I18N = {
     week_short_usd: "$ sem.",
     week_short_r: "R sem.",
     one_r_hint: "1R = 1% del capital = {amount}",
-    calendar_month_total_label: "Total del mes:",
+    calendar_month_total_label: "Total del mes",
     calendar_month_total_empty: "Total del mes: \u2014",
     register_trade: "Registrar Operación",
     date: "Fecha",
@@ -606,7 +612,7 @@ const I18N = {
     week_short_usd: "$ wk",
     week_short_r: "R wk",
     one_r_hint: "1R = 1% of capital = {amount}",
-    calendar_month_total_label: "This month's total:",
+    calendar_month_total_label: "This month's total",
     calendar_month_total_empty: "This month's total: \u2014",
     register_trade: "Record Trade",
     date: "Date",
@@ -1053,7 +1059,7 @@ function applyLanguage(newLang) {
   document.getElementById('label-streak').textContent = i18n('current_streak');
   document.getElementById('label-monthly-breakdown').textContent = i18n('monthly_breakdown');
   document.getElementById('col-monthly-1').textContent = i18n('month');
-  document.getElementById('label-calendar-title').textContent = i18n('calendar_title');
+  document.getElementById('label-calendar-title').textContent = i18n('calendar_month_total_label');
 
   document.getElementById('modalTitle').textContent = i18n('register_trade');
   document.getElementById('lbl-date').textContent = i18n('date');
@@ -1405,15 +1411,17 @@ function computeCalendarMonthTotal() {
 function renderCalendar() {
   document.getElementById('calMonthLabel').textContent = `${fullMonthNames[currentMonth]} ${currentYear}`;
   const titleEl = document.getElementById('label-calendar-title');
+  const valueEl = document.getElementById('label-calendar-title-value');
   const { total: monthTotal, hasData: monthHasData } = computeCalendarMonthTotal();
+  titleEl.textContent = i18n('calendar_month_total_label');
   if (monthHasData) {
-    const prefix = monthTotal > 0 ? '+' : '';
-    const totalText = calendarMode === 'r' ? `${prefix}${fmt(monthTotal)}R` : `${prefix}$${fmt(Math.abs(monthTotal))}`;
-    titleEl.textContent = `${i18n('calendar_month_total_label')} ${totalText}`;
-    titleEl.style.color = `var(--${pnlColorVar(monthTotal)})`;
+    const prefix = monthTotal < 0 ? '-' : '';
+    const totalText = calendarMode === 'r' ? `${prefix}${fmt(Math.abs(monthTotal))} R` : `${prefix}${fmt(Math.abs(monthTotal))} $`;
+    valueEl.textContent = totalText;
+    valueEl.style.color = `var(--${pnlColorVar(monthTotal)})`;
   } else {
-    titleEl.textContent = i18n('calendar_month_total_empty');
-    titleEl.style.color = '';
+    valueEl.textContent = '—';
+    valueEl.style.color = '';
   }
   const grid = document.getElementById('calendarGrid');
   const weekLabel = calendarMode === 'r' ? i18n('week_short_r') : i18n('week_short_usd');
