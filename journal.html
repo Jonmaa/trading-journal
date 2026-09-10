@@ -71,6 +71,7 @@
   .stat-value.neutral { color: var(--text-primary); }
   .stat-value.gold { color: var(--gold); }
   .stat-sub { font-size: 12px; color: var(--text-secondary); margin-top: 5px; font-family: var(--sans); }
+  .chart-legend { font-size: 11px; color: var(--text-secondary); margin-top: 4px; font-family: var(--mono); letter-spacing: 0.02em; }
   .edit-capital-btn { position: absolute; top: 12px; right: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; color: var(--text-secondary); cursor: pointer; padding: 4px 8px; font-size: 11px; }
 
   /* ─── CALENDAR & PANELS ─── */
@@ -118,6 +119,10 @@
   .thumb-btn img { width: 100%; height: 100%; object-fit: cover; }
   .action-btn { background: transparent; border: none; font-size: 14px; cursor: pointer; margin-right: 5px; opacity: 0.7; }
   .action-btn:hover { opacity: 1; }
+  .row-action-btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 5px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--text-secondary); margin-right: 6px; font-family: var(--sans); white-space: nowrap; }
+  .row-action-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+  .row-action-btn.danger { background: var(--red); border-color: var(--red); color: #fff; padding: 6px 9px; }
+  .row-action-btn.danger:hover { opacity: 0.85; }
 
   /* ─── MODAL ─── */
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); z-index: 200; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; }
@@ -272,7 +277,19 @@
         </div>
       </div>
       <div class="panel-card">
-        <div class="panel-title" id="chart-title">Curva de Equidad</div>
+        <div class="panel-header" style="flex-wrap: wrap; gap: 10px; align-items: flex-start;">
+          <div>
+            <div class="panel-title" id="chart-title">Curva de Equidad</div>
+            <div class="chart-legend" id="chart-legend-text"></div>
+          </div>
+          <div class="mode-toggle" id="chart-period-toggle">
+            <button class="mode-btn" id="chart-period-btn-today" onclick="setChartPeriod('today')">Today</button>
+            <button class="mode-btn" id="chart-period-btn-week" onclick="setChartPeriod('week')">Semana</button>
+            <button class="mode-btn" id="chart-period-btn-month" onclick="setChartPeriod('month')">Mes</button>
+            <button class="mode-btn" id="chart-period-btn-year" onclick="setChartPeriod('year')">Año</button>
+            <button class="mode-btn active" id="chart-period-btn-all" onclick="setChartPeriod('all')">All</button>
+          </div>
+        </div>
         <canvas id="equityChart"></canvas>
       </div>
     </div>
@@ -326,7 +343,7 @@
 
         <div class="form-group">
           <label class="form-label" id="lbl-setup">Patrón / Setup</label>
-          <input type="text" class="form-input" id="f-setup" list="setup-list" placeholder="Elige o escribe uno nuevo...">
+          <input type="text" class="form-input" id="f-setup" list="setup-list" placeholder="Elige o escribe uno nuevo..." onfocus="handleSetupFocus(this)" onblur="handleSetupBlur(this)">
           <datalist id="setup-list"></datalist>
         </div>
         <div class="form-group">
@@ -392,6 +409,26 @@
   </div>
 </div>
 
+<!-- ─── MODAL DE CAPITAL INICIAL ─── -->
+<div class="modal-overlay" id="capitalModal" onclick="closeCapitalModalIfOverlay(event)">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <h3 style="font-size:15px;" id="capitalModalTitle">Editar Capital Inicial Base</h3>
+      <button class="action-btn" onclick="closeCapitalModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group full">
+        <label class="form-label" id="lbl-capital-input">Capital Inicial Base</label>
+        <input type="text" inputmode="decimal" class="form-input" id="f-capital" placeholder="Ej. 10100 o 10100,50" onkeydown="if(event.key==='Enter'){event.preventDefault();guardarCapital();}">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="btn-capital-cancel" onclick="closeCapitalModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btn-capital-save" onclick="guardarCapital()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // Funciones de formateo numérico de estilo Español
 function fmt(num) {
@@ -444,6 +481,8 @@ const I18N = {
     dollars: "Dólares",
     r_multiples: "Múltiplos",
     edit: "Editar",
+    note: "Nota",
+    delete_label: "Borrar",
     initial_capital: "Capital Inicial Base",
     current_capital: "Capital Actual",
     ytd_return: "Rentabilidad YTD",
@@ -460,6 +499,12 @@ const I18N = {
     r_avg: "R Promedio",
     equity_curve: "Curva de Equidad",
     r_curve: "Curva de R Acumulada",
+    chart_period_today: "Today",
+    chart_period_week: "Semana",
+    chart_period_month: "Mes",
+    chart_period_year: "Año",
+    chart_period_all: "All",
+    chart_window_all_trades: "Todas las operaciones cerradas",
     no_data: "Sin datos",
     trades_with_r_year: "{n} operaciones con R este año",
     trades_with_r_month: "{n} operaciones con R este mes",
@@ -468,6 +513,9 @@ const I18N = {
     calendar_title: "Calendario de Resultados",
     week_short_usd: "$ sem.",
     week_short_r: "R sem.",
+    one_r_hint: "1R = 1% del capital = {amount}",
+    calendar_month_total_label: "Total del mes:",
+    calendar_month_total_empty: "Total del mes: \u2014",
     register_trade: "Registrar Operación",
     date: "Fecha",
     symbol_label: "Símbolo (Ej: NQ)",
@@ -494,6 +542,9 @@ const I18N = {
     import_done: "Importación completada.",
     capital_prompt: "Introduce tu Capital Inicial Base (ej. 10100 o 10100,50):",
     capital_invalid: "Por favor, introduce un número válido sin formato raro.",
+    edit_capital_title: "Editar Capital Inicial Base",
+    capital_placeholder: "Ej. 10100 o 10100,50",
+    save: "Guardar",
     symbol_required: "El símbolo es obligatorio.",
     confirm_delete: "¿Seguro que quieres borrar este trade?"
   },
@@ -522,6 +573,8 @@ const I18N = {
     dollars: "Dollars",
     r_multiples: "Multiples",
     edit: "Edit",
+    note: "Note",
+    delete_label: "Delete",
     initial_capital: "Initial Base Capital",
     current_capital: "Current Capital",
     ytd_return: "YTD Return",
@@ -538,6 +591,12 @@ const I18N = {
     r_avg: "Avg R",
     equity_curve: "Equity Curve",
     r_curve: "Cumulative R Curve",
+    chart_period_today: "Today",
+    chart_period_week: "Week",
+    chart_period_month: "Month",
+    chart_period_year: "Year",
+    chart_period_all: "All",
+    chart_window_all_trades: "All closed trades",
     no_data: "No data",
     trades_with_r_year: "{n} trades with R this year",
     trades_with_r_month: "{n} trades with R this month",
@@ -546,6 +605,9 @@ const I18N = {
     calendar_title: "Results Calendar",
     week_short_usd: "$ wk",
     week_short_r: "R wk",
+    one_r_hint: "1R = 1% of capital = {amount}",
+    calendar_month_total_label: "This month's total:",
+    calendar_month_total_empty: "This month's total: \u2014",
     register_trade: "Record Trade",
     date: "Date",
     symbol_label: "Symbol (e.g. NQ)",
@@ -572,6 +634,9 @@ const I18N = {
     import_done: "Import completed.",
     capital_prompt: "Enter your Initial Base Capital (e.g. 10100 or 10100.50):",
     capital_invalid: "Please enter a valid number without unusual formatting.",
+    edit_capital_title: "Edit Initial Base Capital",
+    capital_placeholder: "e.g. 10100 or 10100.50",
+    save: "Save",
     symbol_required: "Symbol is required.",
     confirm_delete: "Are you sure you want to delete this trade?"
   }
@@ -587,9 +652,31 @@ const MONTH_NAMES_FULL = {
 };
 const WEEKDAY_LETTERS = { es: ['L','M','X','J','V','S','D'], en: ['M','T','W','T','F','S','S'] };
 const SETUP_DEFAULTS = {
-  es: ["Rebote AVWAP", "Pullback EMA", "Rotura Momentum", "6/20"],
-  en: ["AVWAP Bounce", "EMA Pullback", "Momentum Breakout", "6/20"]
+  es: ["Rebote AVWAP", "Pullback EMA", "Rotura Momentum", "6/20", "Pivot 15'", "Pivot 30'"],
+  en: ["AVWAP Bounce", "EMA Pullback", "Momentum Breakout", "6/20", "Pivot 15'", "Pivot 30'"]
 };
+
+// Índice idioma-independiente de los patrones por defecto: permite reconocer que
+// "Rebote AVWAP" (es) y "AVWAP Bounce" (en) son el MISMO patrón. Sin esto, al
+// guardar un trade con el patrón por defecto en un idioma y luego cambiar de
+// idioma, el patrón quedaba "duplicado" (aparecía una vez en cada idioma en el
+// listado de sugerencias y en el Historial).
+const SETUP_DEFAULT_INDEX = new Map();
+Object.keys(SETUP_DEFAULTS).forEach(langKey => {
+  SETUP_DEFAULTS[langKey].forEach((label, idx) => {
+    SETUP_DEFAULT_INDEX.set(label.trim().toLowerCase(), idx);
+  });
+});
+
+// Si el patrón guardado coincide con uno de los defaults (en cualquier idioma),
+// devuelve su versión en targetLang. Los patrones personalizados (texto libre que
+// no coincide con ningún default) se devuelven sin tocar.
+function localizeSetup(setupText, targetLang) {
+  if (!setupText) return setupText;
+  const idx = SETUP_DEFAULT_INDEX.get(setupText.trim().toLowerCase());
+  if (idx === undefined) return setupText;
+  return SETUP_DEFAULTS[targetLang][idx];
+}
 
 function i18n(key, vars) {
   let s = (I18N[lang] && I18N[lang][key]) || (I18N.es && I18N.es[key]) || key;
@@ -620,12 +707,147 @@ function calcRMultiple(t) {
   return reward / risk;
 }
 
+// "R fijo" que usa el Calendario y Rendimiento: aquí 1R no depende del riesgo
+// real de cada trade (entrada/stop) sino que se define como el 1% del capital
+// base configurado (p. ej. con 5000$ de capital, 1R = 50$). Solo el R que se
+// ve en la columna de Historial sigue siendo el R real por trade.
+function oneRValue() {
+  return initialCapital * 0.01;
+}
+function calcFixedR(pnlDollars) {
+  const oneR = oneRValue();
+  if (!(oneR > 0)) return null;
+  return pnlDollars / oneR;
+}
+// Versión de calcFixedR() para un trade completo: solo necesita su P&L en $
+// (no entrada/stop/salida), así que todo trade con P&L válido cuenta.
+function calcFixedRForTrade(t) {
+  if (t.pnl === '' || t.pnl === null || t.pnl === undefined) return null;
+  return calcFixedR(parseFloat(t.pnl));
+}
+
 // Parsea "YYYY-MM-DD" a partir del propio string, sin pasar por new Date()
 // (new Date('YYYY-MM-DD') se interpreta en UTC y luego se lee en hora local,
 // lo que puede desplazar el mes/año en usuarios con huso horario negativo).
 function parseYearMonth(dateStr) {
   const [y, m] = dateStr.split('-');
   return { year: parseInt(y, 10), month: parseInt(m, 10) - 1 };
+}
+
+// Convierte un objeto Date (hora local) a "YYYY-MM-DD", igual que el resto
+// de fechas de la app.
+function toDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// Capital acumulado justo ANTES de dateStr (capital inicial + el P&L de todos
+// los trades cerrados con fecha anterior). `closed` debe venir ordenado
+// cronológicamente asc, tal cual sale de computedTrades.
+function balanceBeforeDate(closed, dateStr) {
+  let bal = initialCapital;
+  for (const t of closed) {
+    if (t.date >= dateStr) break;
+    bal += parseFloat(t.pnl);
+  }
+  return bal;
+}
+
+// Rango [start, hoy] de la semana/mes/año EN CURSO (nunca se dibuja hacia el
+// futuro). unit dice si cada punto del gráfico es un día ('day') o un bloque
+// de 7 días ('week', para la vista anual).
+function getWindowRange(period, today) {
+  if (period === 'week') {
+    const dow = (today.getDay() + 6) % 7; // 0 = lunes
+    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - dow);
+    return { start, end: today, unit: 'day' };
+  }
+  if (period === 'month') {
+    const start = new Date(today.getFullYear(), today.getMonth(), 1);
+    return { start, end: today, unit: 'day' };
+  }
+  const start = new Date(today.getFullYear(), 0, 1); // año en curso
+  return { start, end: today, unit: 'week' };
+}
+
+// Construye la curva de capital para la ventana actual: un punto por día
+// (semana/mes) o por bloque de 7 días (año), arrastrando el saldo aunque ese
+// día/semana no tenga trades, con una etiqueta pensada para el eje X.
+function buildWindowSeries(period, closed) {
+  const today = new Date();
+  const { start, end, unit } = getWindowRange(period, today);
+  const baselineBalance = balanceBeforeDate(closed, toDateStr(start));
+
+  const dailyPnl = new Map();
+  closed.forEach(t => {
+    dailyPnl.set(t.date, (dailyPnl.get(t.date) || 0) + parseFloat(t.pnl));
+  });
+
+  const points = [];
+  let balance = baselineBalance;
+
+  if (unit === 'day') {
+    const cursor = new Date(start);
+    let i = 0;
+    while (cursor <= end) {
+      const dStr = toDateStr(cursor);
+      balance += (dailyPnl.get(dStr) || 0);
+      const label = period === 'week' ? WEEKDAY_LETTERS[lang][i] : String(cursor.getDate());
+      points.push({ value: balance, label });
+      cursor.setDate(cursor.getDate() + 1);
+      i++;
+    }
+  } else {
+    // Bloques de 7 días para el año: se etiqueta solo el primer bloque de cada mes
+    const cursor = new Date(start);
+    let lastLabeledMonth = -1;
+    while (cursor <= end) {
+      const bucketEnd = new Date(cursor);
+      bucketEnd.setDate(cursor.getDate() + 6);
+      const realEnd = bucketEnd > end ? end : bucketEnd;
+      const d = new Date(cursor);
+      while (d <= realEnd) {
+        balance += (dailyPnl.get(toDateStr(d)) || 0);
+        d.setDate(d.getDate() + 1);
+      }
+      const month = cursor.getMonth();
+      const label = month !== lastLabeledMonth ? monthNames[month] : null;
+      lastLabeledMonth = month;
+      points.push({ value: balance, label });
+      cursor.setDate(cursor.getDate() + 7);
+    }
+  }
+
+  return { points, baselineBalance };
+}
+
+// Serie "Today": solo los trades cerrados con fecha de HOY, uno a uno,
+// arrancando desde el capital que había antes de hoy. Si hoy no hay trades
+// todavía, se deja un único punto plano (mismo criterio que semana/mes/año).
+function buildTodaySeries(closed) {
+  const todayStr = toDateStr(new Date());
+  const baselineBalance = balanceBeforeDate(closed, todayStr);
+  const todaysTrades = closed.filter(t => t.date === todayStr);
+  let balance = baselineBalance;
+  const points = todaysTrades.map(t => {
+    balance += parseFloat(t.pnl);
+    return { value: balance, label: null };
+  });
+  if (points.length === 0) points.push({ value: baselineBalance, label: null });
+  return { points, baselineBalance };
+}
+
+// Texto corto bajo el título: qué ventana de tiempo se está mostrando.
+function windowRangeLabel(period) {
+  if (period === 'all') return i18n('chart_window_all_trades');
+  if (period === 'today') return formatDate(toDateStr(new Date()));
+  const today = new Date();
+  const { start, end } = getWindowRange(period, today);
+  if (period === 'week') return `${formatDate(toDateStr(start))} \u2013 ${formatDate(toDateStr(end))}`;
+  if (period === 'month') return `${fullMonthNames[today.getMonth()]} ${today.getFullYear()}`;
+  return `${today.getFullYear()}`;
 }
 
 // Acepta capital en notación española (10.100,50) o con punto decimal simple (50000.50)
@@ -766,6 +988,7 @@ let editingId = null;
 let currentImage = null;
 let statsMode = 'usd'; // 'usd' | 'r' — controla si el tab Rendimiento se ve en $ o en R
 let calendarMode = 'usd'; // 'usd' | 'r' — controla si el tab Calendario se ve en $ o en R
+let chartPeriod = 'all'; // 'today' | 'week' | 'month' | 'year' | 'all' — agrupación de la curva de equidad/R
 
 const calDate = new Date();
 let currentMonth = calDate.getMonth();
@@ -817,6 +1040,11 @@ function applyLanguage(newLang) {
   document.getElementById('mode-btn-r').textContent = 'R ' + i18n('r_multiples');
   document.getElementById('cal-mode-btn-usd').textContent = '$ ' + i18n('dollars');
   document.getElementById('cal-mode-btn-r').textContent = 'R ' + i18n('r_multiples');
+  document.getElementById('chart-period-btn-today').textContent = i18n('chart_period_today');
+  document.getElementById('chart-period-btn-week').textContent = i18n('chart_period_week');
+  document.getElementById('chart-period-btn-month').textContent = i18n('chart_period_month');
+  document.getElementById('chart-period-btn-year').textContent = i18n('chart_period_year');
+  document.getElementById('chart-period-btn-all').textContent = i18n('chart_period_all');
 
   document.getElementById('btn-edit-capital').textContent = i18n('edit');
   document.getElementById('label-initial-cap').textContent = i18n('initial_capital');
@@ -844,6 +1072,12 @@ function applyLanguage(newLang) {
   document.getElementById('btn-save').textContent = i18n('save_trade');
   document.getElementById('btn-lightbox-close').textContent = '✕ ' + i18n('close');
   document.getElementById('btn-notes-close').textContent = i18n('close');
+
+  document.getElementById('capitalModalTitle').textContent = i18n('edit_capital_title');
+  document.getElementById('lbl-capital-input').textContent = i18n('initial_capital');
+  document.getElementById('f-capital').placeholder = i18n('capital_placeholder');
+  document.getElementById('btn-capital-cancel').textContent = i18n('cancel');
+  document.getElementById('btn-capital-save').textContent = i18n('save');
 
   updateHeaderDate();
   refreshApp();
@@ -879,7 +1113,7 @@ function refreshApp() {
 function updateSetupOptions() {
   const datalist = document.getElementById('setup-list');
   const defaults = SETUP_DEFAULTS[lang];
-  const used = trades.map(t => t.setup).filter(s => s && s.trim() !== "");
+  const used = trades.map(t => localizeSetup(t.setup, lang)).filter(s => s && s.trim() !== "");
   const seen = new Map();
   [...defaults, ...used].forEach(s => {
     const key = s.trim().toLowerCase();
@@ -888,6 +1122,23 @@ function updateSetupOptions() {
   const uniqueSetups = [...seen.values()].sort((a, b) => a.localeCompare(b));
   
   datalist.innerHTML = uniqueSetups.map(s => `<option value="${escapeHtml(s)}">`).join('');
+}
+
+// Un <input list> nativo solo sugiere las opciones del datalist que coinciden
+// con el texto que ya hay escrito, así que si el campo Patrón/Setup ya tenía
+// un valor solo aparecía esa opción hasta borrar letras. Al enfocar, vaciamos
+// el campo momentáneamente para que el navegador muestre TODAS las opciones;
+// al salir del campo, si no se escribió ni eligió nada nuevo, se restaura el
+// valor que había.
+function handleSetupFocus(input) {
+  input.dataset.prevValue = input.value;
+  input.value = '';
+}
+function handleSetupBlur(input) {
+  if (input.value === '' && input.dataset.prevValue) {
+    input.value = input.dataset.prevValue;
+  }
+  delete input.dataset.prevValue;
 }
 
 function renderTable() {
@@ -916,7 +1167,7 @@ function renderTable() {
       <td class="cell-mono">${formatDate(t.date)}</td>
       <td class="cell-symbol">${escapeHtml(t.symbol)}</td>
       <td><span class="badge ${badgeCls}">${t.direction}</span></td>
-      <td><span class="tag-pill">${escapeHtml(t.setup) || '—'}</span></td>
+      <td><span class="tag-pill">${escapeHtml(localizeSetup(t.setup, lang)) || '—'}</span></td>
       <td class="cell-mono">${fmtPrice(t.entry)}</td>
       <td class="cell-mono">${fmtPrice(t.stop)}</td>
       <td class="cell-mono">${fmtPrice(t.exit)}</td>
@@ -924,9 +1175,9 @@ function renderTable() {
       <td class="cell-mono" style="color: var(--${pnlColorVar(pnl)})">${pnlText}</td>
       <td>${chartBtn}</td>
       <td>
-        ${t.notes ? `<button class="action-btn" onclick="showNotes(${t.id})" title="Ver notas">📝</button>` : ''}
-        <button class="action-btn" onclick="openEditModal(${t.id})" title="Editar">✏️</button>
-        <button class="action-btn" onclick="deleteTrade(${t.id})" title="Borrar">🗑️</button>
+        ${t.notes ? `<button class="row-action-btn" onclick="showNotes(${t.id})" title="${i18n('note')}">${i18n('note')}</button>` : ''}
+        <button class="row-action-btn" onclick="openEditModal(${t.id})" title="${i18n('edit')}">${i18n('edit')}</button>
+        <button class="row-action-btn danger" onclick="deleteTrade(${t.id})" title="${i18n('delete_label')}"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg></button>
       </td>
     </tr>`;
   }).join('');
@@ -940,17 +1191,29 @@ function formatDate(d) {
 }
 
 function configurarCapital() {
-  const input = prompt(i18n('capital_prompt'), initialCapital);
-  if (input !== null && input.trim() !== '') {
-    const val = parseSpanishOrPlainNumber(input);
-    if (!isNaN(val) && val > 0) {
-      const previous = initialCapital;
-      initialCapital = val;
-      if (!saveCapitalToStorage(initialCapital)) { initialCapital = previous; return; }
-      refreshApp();
-    } else {
-      alert(i18n('capital_invalid'));
-    }
+  document.getElementById('f-capital').value = initialCapital;
+  document.getElementById('capitalModal').classList.add('open');
+  setTimeout(() => {
+    const inp = document.getElementById('f-capital');
+    inp.focus();
+    inp.select();
+  }, 0);
+}
+
+function closeCapitalModal() { document.getElementById('capitalModal').classList.remove('open'); }
+function closeCapitalModalIfOverlay(e) { if (e.target.id === 'capitalModal') closeCapitalModal(); }
+
+function guardarCapital() {
+  const input = document.getElementById('f-capital').value;
+  const val = parseSpanishOrPlainNumber(input);
+  if (!isNaN(val) && val > 0) {
+    const previous = initialCapital;
+    initialCapital = val;
+    if (!saveCapitalToStorage(initialCapital)) { initialCapital = previous; return; }
+    closeCapitalModal();
+    refreshApp();
+  } else {
+    alert(i18n('capital_invalid'));
   }
 }
 
@@ -991,9 +1254,13 @@ function updateStats() {
 
   const mTable = document.getElementById('monthlyTableBody');
 
+  const oneR = oneRValue();
+  const statsRBtn = document.getElementById('mode-btn-r');
+  if (statsRBtn) statsRBtn.title = oneR > 0 ? i18n('one_r_hint', { amount: `$${fmt(oneR)}` }) : '';
+
   if (statsMode === 'r') {
-    // Vista en R: solo entran los trades con entry/stop/exit válidos (R calculable)
-    const withR = closed.map(t => ({ t, r: calcRMultiple(t) })).filter(x => x.r !== null);
+    // Vista en R: 1R = 1% del capital base, así que todo trade con P&L válido cuenta
+    const withR = closed.map(t => ({ t, r: calcFixedRForTrade(t) })).filter(x => x.r !== null);
     let ytdR = 0, ytdCount = 0, monthR = 0, monthCount = 0;
     const monthlyR = {};
 
@@ -1090,6 +1357,14 @@ function setStatsMode(mode) {
   renderChart();
 }
 
+function setChartPeriod(period) {
+  chartPeriod = period;
+  ['today', 'week', 'month', 'year', 'all'].forEach(p => {
+    document.getElementById('chart-period-btn-' + p).classList.toggle('active', p === period);
+  });
+  renderChart();
+}
+
 function setEl(id, val, cls) {
   const el = document.getElementById(id);
   el.textContent = val;
@@ -1110,10 +1385,41 @@ function setCalendarMode(mode) {
   renderCalendar();
 }
 
+// Total del mes que se está viendo en el Calendario (respeta el modo $/R y la
+// navegación de mes con las flechas), para mostrarlo arriba a la izquierda en
+// vez de un título fijo.
+function computeCalendarMonthTotal() {
+  const monthTrades = computedTrades.filter(t => {
+    if (t.pnl === '' || t.pnl === null) return false;
+    const { year, month } = parseYearMonth(t.date);
+    return year === currentYear && month === currentMonth;
+  });
+  if (calendarMode === 'r') {
+    const total = monthTrades.reduce((sum, t) => sum + (calcFixedR(parseFloat(t.pnl)) || 0), 0);
+    return { total, hasData: monthTrades.length > 0 };
+  }
+  const total = monthTrades.reduce((sum, t) => sum + parseFloat(t.pnl), 0);
+  return { total, hasData: monthTrades.length > 0 };
+}
+
 function renderCalendar() {
   document.getElementById('calMonthLabel').textContent = `${fullMonthNames[currentMonth]} ${currentYear}`;
+  const titleEl = document.getElementById('label-calendar-title');
+  const { total: monthTotal, hasData: monthHasData } = computeCalendarMonthTotal();
+  if (monthHasData) {
+    const prefix = monthTotal > 0 ? '+' : '';
+    const totalText = calendarMode === 'r' ? `${prefix}${fmt(monthTotal)}R` : `${prefix}$${fmt(Math.abs(monthTotal))}`;
+    titleEl.textContent = `${i18n('calendar_month_total_label')} ${totalText}`;
+    titleEl.style.color = `var(--${pnlColorVar(monthTotal)})`;
+  } else {
+    titleEl.textContent = i18n('calendar_month_total_empty');
+    titleEl.style.color = '';
+  }
   const grid = document.getElementById('calendarGrid');
   const weekLabel = calendarMode === 'r' ? i18n('week_short_r') : i18n('week_short_usd');
+  const oneR = oneRValue();
+  const rModeBtn = document.getElementById('cal-mode-btn-r');
+  if (rModeBtn) rModeBtn.title = oneR > 0 ? i18n('one_r_hint', { amount: `$${fmt(oneR)}` }) : '';
   grid.innerHTML = WEEKDAY_LETTERS[lang].map(d => `<div class="cal-header-day">${d}</div>`).join('')
     + `<div class="cal-week-header">${weekLabel}</div>`;
 
@@ -1145,9 +1451,9 @@ function renderCalendar() {
       const dayTrades = computedTrades.filter(t => t.date === dStr && t.pnl !== '' && t.pnl !== null);
 
       if (calendarMode === 'r') {
-        const rs = dayTrades.map(t => calcRMultiple(t)).filter(r => r !== null);
-        if (rs.length > 0) {
-          const dayR = rs.reduce((sum, r) => sum + r, 0);
+        const dayPnl = dayTrades.reduce((sum, t) => sum + parseFloat(t.pnl), 0);
+        const dayR = dayTrades.length > 0 ? calcFixedR(dayPnl) : null;
+        if (dayR !== null) {
           weekTotal += dayR; weekHasData = true;
           const cls = dayR > 0 ? 'win' : (dayR < 0 ? 'loss' : 'neutral');
           const prefix = dayR > 0 ? '+' : '';
@@ -1247,6 +1553,7 @@ function closeNotesModalIfOverlay(e) { if (e.target.id === 'notesModal') closeNo
 function openAddModal() {
   editingId = null;
   currentImage = null;
+  document.getElementById('f-date').value = new Date().toISOString().split('T')[0];
   document.getElementById('f-symbol').value = '';
   document.getElementById('f-setup').value = '';
   document.getElementById('f-pnl').value = '';
@@ -1271,7 +1578,7 @@ function openEditModal(id) {
   document.getElementById('f-date').value = t.date;
   document.getElementById('f-symbol').value = t.symbol;
   document.getElementById('f-direction').value = t.direction;
-  document.getElementById('f-setup').value = t.setup || '';
+  document.getElementById('f-setup').value = localizeSetup(t.setup, lang) || '';
   document.getElementById('f-pnl').value = t.pnl;
   document.getElementById('f-entry').value = t.entry || '';
   document.getElementById('f-stop').value = t.stop || '';
@@ -1335,33 +1642,121 @@ function renderChart() {
   const closed = computedTrades.filter(t => t.pnl !== '' && t.pnl !== null);
 
   document.getElementById('chart-title').textContent = statsMode === 'r' ? i18n('r_curve') : i18n('equity_curve');
+  const legendEl = document.getElementById('chart-legend-text');
+  if (legendEl) legendEl.textContent = windowRangeLabel(chartPeriod);
 
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  let points, baseline;
-  if (statsMode === 'r') {
-    const rSeries = closed.map(t => calcRMultiple(t)).filter(r => r !== null);
-    if (rSeries.length < 1) return;
-    baseline = 0;
-    points = [0];
-    let cum = 0;
-    rSeries.forEach(r => { cum += r; points.push(cum); });
+  let points, baseline, labels;
+  if (chartPeriod === 'all') {
+    // Todo el histórico, trade a trade: sin fecha fija por punto (cada uno es
+    // una operación, no un día del calendario), así que no lleva etiquetas en
+    // el eje X.
+    if (statsMode === 'r') {
+      const rSeries = closed.map(t => calcFixedRForTrade(t)).filter(r => r !== null);
+      if (rSeries.length < 1) { canvas.width = canvas.offsetWidth; canvas.height = 320; return; }
+      baseline = 0;
+      points = [0];
+      let cum = 0;
+      rSeries.forEach(r => { cum += r; points.push(cum); });
+    } else {
+      if (closed.length < 1) { canvas.width = canvas.offsetWidth; canvas.height = 320; return; }
+      baseline = initialCapital;
+      points = [initialCapital, ...closed.map(t => t.finalCap)];
+    }
+    labels = points.map(() => null);
+  } else if (chartPeriod === 'today') {
+    // Hoy: los trades cerrados hoy, uno a uno, arrancando del capital que
+    // había antes de hoy. Tampoco lleva etiquetas de fecha (no hay hora
+    // guardada por trade, solo la fecha).
+    const { points: winPoints, baselineBalance } = buildTodaySeries(closed);
+    const oneR = oneRValue();
+    if (statsMode === 'r') {
+      baseline = 0;
+      points = [0, ...winPoints.map(p => (oneR > 0 ? (p.value - baselineBalance) / oneR : 0))];
+    } else {
+      baseline = baselineBalance;
+      points = [baselineBalance, ...winPoints.map(p => p.value)];
+    }
+    labels = points.map(() => null);
   } else {
-    if (closed.length < 1) return;
-    baseline = initialCapital;
-    points = [initialCapital, ...closed.map(t => t.finalCap)];
+    // Semana/Mes/Año: la semana, el mes o el año EN CURSO, día a día (o en
+    // bloques de 7 días para el año), arrastrando el capital aunque ese
+    // día/semana no tenga trades — así se ve como una curva real, no puntos
+    // sueltos.
+    const { points: winPoints, baselineBalance } = buildWindowSeries(chartPeriod, closed);
+    const oneR = oneRValue();
+    if (statsMode === 'r') {
+      baseline = 0;
+      points = [0, ...winPoints.map(p => (oneR > 0 ? (p.value - baselineBalance) / oneR : 0))];
+    } else {
+      baseline = baselineBalance;
+      points = [baselineBalance, ...winPoints.map(p => p.value)];
+    }
+    labels = [null, ...winPoints.map(p => p.label)];
   }
 
-  const W = canvas.offsetWidth; 
-  const H = 300; 
+  const W = canvas.offsetWidth;
+  const H = 320;
   canvas.width = W; canvas.height = H;
 
-  const min = Math.min(...points); const max = Math.max(...points);
-  const range = (max - min) || 1;
-  const pd = 20, cw = W - (pd*2), ch = H - (pd*2);
-  const px = i => pd + (i / (points.length - 1)) * cw;
-  const py = v => pd + ch - ((v - min) / range) * ch;
+  const hasXLabels = labels.some(l => l);
+  const min = Math.min(...points, baseline);
+  const max = Math.max(...points, baseline);
+  const rawRange = (max - min) || (Math.max(Math.abs(max), 1) * 0.1) || 1;
+  const vMin = min - rawRange * 0.1;
+  const vMax = max + rawRange * 0.1;
+  const range = (vMax - vMin) || 1;
 
+  // --- Eje Y: mide primero el ancho de las etiquetas de $/R para reservar
+  // exactamente el margen izquierdo que necesitan (con montos grandes o
+  // negativos no se cortan). ---
+  ctx.font = '10px "IBM Plex Mono", monospace';
+  const yTicks = 4;
+  const yTickLabels = [];
+  for (let t = 0; t <= yTicks; t++) {
+    const v = vMin + (range * t / yTicks);
+    yTickLabels.push(statsMode === 'r' ? `${fmt(v)}R` : `$${fmt(v)}`);
+  }
+  const padLeft = Math.ceil(Math.max(...yTickLabels.map(s => ctx.measureText(s).width))) + 14;
+  const padRight = 14, padTop = 16, padBottom = hasXLabels ? 26 : 14;
+  const cw = W - padLeft - padRight;
+  const ch = H - padTop - padBottom;
+
+  const px = i => padLeft + (points.length === 1 ? cw / 2 : (i / (points.length - 1)) * cw);
+  const py = v => padTop + ch - ((v - vMin) / range) * ch;
+
+  ctx.strokeStyle = 'rgba(154,154,154,0.15)';
+  ctx.lineWidth = 1;
+  ctx.fillStyle = '#9A9A9A';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (let t = 0; t <= yTicks; t++) {
+    const v = vMin + (range * t / yTicks);
+    const y = py(v);
+    ctx.beginPath();
+    ctx.moveTo(padLeft, y);
+    ctx.lineTo(W - padRight, y);
+    ctx.stroke();
+    ctx.fillText(yTickLabels[t], padLeft - 8, y);
+  }
+
+  // --- Eje X: una etiqueta bajo cada punto que traiga una (día de la semana,
+  // día del mes, o el mes al empezar cada bloque semanal del año). Si no caben
+  // todas, nos las saltamos con un stride en vez de amontonarlas. ---
+  if (hasXLabels) {
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    const labelY = padTop + ch + 8;
+    const approxLabelWidth = 22;
+    const maxLabels = Math.max(1, Math.floor(cw / approxLabelWidth));
+    const labeledIdx = labels.map((l, i) => l ? i : -1).filter(i => i >= 0);
+    const stride = Math.max(1, Math.ceil(labeledIdx.length / maxLabels));
+    labeledIdx.forEach((i, idx) => {
+      if (idx % stride !== 0 && idx !== labeledIdx.length - 1) return;
+      ctx.fillText(labels[i], px(i), labelY);
+    });
+  }
+
+  // --- Curva ---
   const grad = ctx.createLinearGradient(0, 0, 0, H);
   const isPositive = points[points.length-1] >= baseline;
   grad.addColorStop(0, isPositive ? 'rgba(87,185,138,0.2)' : 'rgba(199,84,80,0.2)');
@@ -1370,8 +1765,8 @@ function renderChart() {
   ctx.beginPath();
   ctx.moveTo(px(0), py(points[0]));
   points.forEach((v, i) => i > 0 && ctx.lineTo(px(i), py(v)));
-  ctx.lineTo(px(points.length-1), H);
-  ctx.lineTo(px(0), H);
+  ctx.lineTo(px(points.length-1), padTop + ch);
+  ctx.lineTo(px(0), padTop + ch);
   ctx.fillStyle = grad;
   ctx.fill();
 
@@ -1379,7 +1774,7 @@ function renderChart() {
   ctx.moveTo(px(0), py(points[0]));
   points.forEach((v, i) => i > 0 && ctx.lineTo(px(i), py(v)));
   ctx.strokeStyle = isPositive ? '#57B98A' : '#C75450';
-  ctx.lineWidth = 3; 
+  ctx.lineWidth = 3;
   ctx.stroke();
 }
 window.addEventListener('resize', () => { if(document.getElementById('tab-stats').classList.contains('active')) renderChart(); });
