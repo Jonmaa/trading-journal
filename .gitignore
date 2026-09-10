@@ -1,1 +1,4 @@
 journalfinal.backup-*.html
+journal.backup-*.html
+.DS_Store
+Claude outputs/
