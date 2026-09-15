@@ -167,6 +167,9 @@
     <span class="logo-text">Trading <span>Diary</span></span>
   </div>
   <div class="header-meta">
+    <button class="btn btn-ghost" id="btn-hide-balance" style="padding:6px 10px; font-size:11px; display:flex; align-items:center;" onclick="toggleHideBalance()" title="Ocultar balance">
+      <span id="hide-balance-icon" style="display:flex; align-items:center;"></span>
+    </button>
     <div class="mode-toggle" id="lang-toggle">
       <button class="mode-btn active" id="lang-btn-es" onclick="applyLanguage('es')">ES</button>
       <button class="mode-btn" id="lang-btn-en" onclick="applyLanguage('en')">EN</button>
@@ -553,6 +556,8 @@ const I18N = {
     capital_invalid: "Por favor, introduce un número válido sin formato raro.",
     edit_capital_title: "Editar Capital Inicial Base",
     edit_capital_hint: "Haz clic para editar",
+    hide_balance_hint: "Ocultar balance",
+    show_balance_hint: "Mostrar balance",
     capital_placeholder: "Ej. 10100 o 10100,50",
     save: "Guardar",
     symbol_required: "El símbolo es obligatorio.",
@@ -647,6 +652,8 @@ const I18N = {
     capital_invalid: "Please enter a valid number without unusual formatting.",
     edit_capital_title: "Edit Initial Base Capital",
     edit_capital_hint: "Click to edit",
+    hide_balance_hint: "Hide balance",
+    show_balance_hint: "Show balance",
     capital_placeholder: "e.g. 10100 or 10100.50",
     save: "Save",
     symbol_required: "Symbol is required.",
@@ -696,6 +703,31 @@ function i18n(key, vars) {
     Object.keys(vars).forEach(k => { s = s.split('{' + k + '}').join(vars[k]); });
   }
   return s;
+}
+
+// Modo privacidad: envuelve cualquier importe en $ ya formateado y lo sustituye
+// por "***" mientras hideBalance esté activo. Los múltiplos R nunca pasan por
+// aquí (no revelan un importe absoluto por sí solos).
+function masked(text) {
+  return hideBalance ? '***' : text;
+}
+
+const EYE_OPEN_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+const EYE_OFF_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a21.8 21.8 0 0 1 5.06-6.06M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.8 21.8 0 0 1-3.22 4.56M14.12 14.12a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
+
+function updateHideBalanceIcon() {
+  const iconEl = document.getElementById('hide-balance-icon');
+  const btn = document.getElementById('btn-hide-balance');
+  if (!iconEl || !btn) return;
+  iconEl.innerHTML = hideBalance ? EYE_OFF_SVG : EYE_OPEN_SVG;
+  btn.title = hideBalance ? i18n('show_balance_hint') : i18n('hide_balance_hint');
+}
+
+function toggleHideBalance() {
+  hideBalance = !hideBalance;
+  try { localStorage.setItem('tradelog_hide_balance', hideBalance ? '1' : '0'); } catch (e) { console.error('Error guardando modo oculto:', e); }
+  updateHideBalanceIcon();
+  refreshApp();
 }
 
 // Un único punto para decidir el color de un valor con signo (P&L, R, etc.)
@@ -1008,6 +1040,7 @@ let currentImage = null;
 let statsMode = 'usd'; // 'usd' | 'r' — controla si el tab Rendimiento se ve en $ o en R
 let calendarMode = 'usd'; // 'usd' | 'r' — controla si el tab Calendario se ve en $ o en R
 let chartPeriod = 'all'; // 'today' | 'week' | 'month' | 'year' | 'all' — agrupación de la curva de equidad/R
+let hideBalance = localStorage.getItem('tradelog_hide_balance') === '1'; // modo privacidad: oculta los importes en $ con "***" (los R no se ocultan)
 
 const calDate = new Date();
 let currentMonth = calDate.getMonth();
@@ -1066,6 +1099,7 @@ function applyLanguage(newLang) {
   document.getElementById('chart-period-btn-all').textContent = i18n('chart_period_all');
 
   document.getElementById('stat-card-initial-cap').title = i18n('edit_capital_hint');
+  updateHideBalanceIcon();
   document.getElementById('label-initial-cap').textContent = i18n('initial_capital');
   document.getElementById('label-current-cap').textContent = i18n('current_capital');
   document.getElementById('label-winrate').textContent = i18n('win_rate');
@@ -1171,7 +1205,7 @@ function renderTable() {
 
   tbody.innerHTML = sorted.map(t => {
     const pnl = t.pnl !== '' && t.pnl !== null ? parseFloat(t.pnl) : null;
-    const pnlText = pnl !== null ? `${pnl >= 0 ? '+' : '-'}$${fmt(Math.abs(pnl))}` : '—';
+    const pnlText = pnl !== null ? masked(`${pnl >= 0 ? '+' : '-'}$${fmt(Math.abs(pnl))}`) : '—';
     const badgeCls = t.direction === 'LONG' ? 'badge-long' : 'badge-short';
     
     // Cálculo de R mediante acción de precio
@@ -1240,8 +1274,8 @@ function updateStats() {
   const closed = computedTrades.filter(t => t.pnl !== '' && t.pnl !== null);
   const currentCap = closed.length ? closed[closed.length - 1].finalCap : initialCapital;
   
-  setEl('stat-initial-cap', `$${fmt(initialCapital)}`);
-  setEl('stat-current-cap', `$${fmt(currentCap)}`);
+  setEl('stat-initial-cap', masked(`$${fmt(initialCapital)}`));
+  setEl('stat-current-cap', masked(`$${fmt(currentCap)}`));
 
   document.getElementById('label-ytd').textContent = statsMode === 'r' ? i18n('ytd_r') : i18n('ytd_return');
   document.getElementById('label-month').textContent = statsMode === 'r' ? i18n('month_r') : i18n('current_month');
@@ -1275,7 +1309,7 @@ function updateStats() {
 
   const oneR = oneRValue();
   const statsRBtn = document.getElementById('mode-btn-r');
-  if (statsRBtn) statsRBtn.title = oneR > 0 ? i18n('one_r_hint', { amount: `$${fmt(oneR)}` }) : '';
+  if (statsRBtn) statsRBtn.title = oneR > 0 ? i18n('one_r_hint', { amount: masked(`$${fmt(oneR)}`) }) : '';
 
   if (statsMode === 'r') {
     // Vista en R: 1R = 1% del capital base, así que todo trade con P&L válido cuenta
@@ -1341,11 +1375,11 @@ function updateStats() {
 
   const ytdPct = (ytdPnl / initialCapital) * 100;
   setEl('stat-ytd-pct', `${ytdPct >= 0 ? '+' : ''}${fmt(ytdPct)}%`, ytdPct >= 0 ? 'positive' : 'negative');
-  document.getElementById('stat-ytd-sub').textContent = `${i18n('net_ytd')}${ytdPnl >= 0 ? '+' : '-'}$${fmt(Math.abs(ytdPnl))}`;
+  document.getElementById('stat-ytd-sub').textContent = `${i18n('net_ytd')}${masked(`${ytdPnl >= 0 ? '+' : '-'}$${fmt(Math.abs(ytdPnl))}`)}`;
 
   const monthPct = (monthPnl / initialCapital) * 100;
   setEl('stat-month-pct', `${monthPct >= 0 ? '+' : ''}${fmt(monthPct)}%`, monthPct >= 0 ? 'positive' : 'negative');
-  document.getElementById('stat-month-sub').textContent = `${i18n('net_month')}${monthPnl >= 0 ? '+' : '-'}$${fmt(Math.abs(monthPnl))}`;
+  document.getElementById('stat-month-sub').textContent = `${i18n('net_month')}${masked(`${monthPnl >= 0 ? '+' : '-'}$${fmt(Math.abs(monthPnl))}`)}`;
 
   const sortedMonths = Object.keys(monthlyData).sort().reverse();
   
@@ -1361,7 +1395,7 @@ function updateStats() {
       
       return `<tr>
         <td><strong>${monthNames[data.month]} ${data.year}</strong></td>
-        <td class="cell-mono" style="color:var(--${pnlColorVar(pnlUSD)})">${prefix}$${fmt(Math.abs(pnlUSD))}</td>
+        <td class="cell-mono" style="color:var(--${pnlColorVar(pnlUSD)})">${masked(`${prefix}$${fmt(Math.abs(pnlUSD))}`)}</td>
         <td class="cell-mono" style="color:var(--${pnlColorVar(pnlUSD)})">${prefix}${fmt(pctRentabilidad)}%</td>
       </tr>`;
     }).join('');
@@ -1429,7 +1463,7 @@ function renderCalendar() {
   titleEl.textContent = i18n('calendar_month_total_label');
   if (monthHasData) {
     const prefix = monthTotal < 0 ? '-' : '';
-    const totalText = calendarMode === 'r' ? `${prefix}${fmt(Math.abs(monthTotal))} R` : `${prefix}${fmt(Math.abs(monthTotal))} $`;
+    const totalText = calendarMode === 'r' ? `${prefix}${fmt(Math.abs(monthTotal))} R` : masked(`${prefix}${fmt(Math.abs(monthTotal))} $`);
     valueEl.textContent = totalText;
     valueEl.style.color = `var(--${pnlColorVar(monthTotal)})`;
   } else {
@@ -1440,7 +1474,7 @@ function renderCalendar() {
   const weekLabel = calendarMode === 'r' ? i18n('week_short_r') : i18n('week_short_usd');
   const oneR = oneRValue();
   const rModeBtn = document.getElementById('cal-mode-btn-r');
-  if (rModeBtn) rModeBtn.title = oneR > 0 ? i18n('one_r_hint', { amount: `$${fmt(oneR)}` }) : '';
+  if (rModeBtn) rModeBtn.title = oneR > 0 ? i18n('one_r_hint', { amount: masked(`$${fmt(oneR)}`) }) : '';
   grid.innerHTML = WEEKDAY_LETTERS[lang].map(d => `<div class="cal-header-day">${d}</div>`).join('')
     + `<div class="cal-week-header">${weekLabel}</div>`;
 
@@ -1496,7 +1530,7 @@ function renderCalendar() {
           rowHtml += `<div class="cal-day ${cls}">
             <div class="cal-day-num">${dayNum}</div>
             ${dayTradesCountHtml}
-            <div class="cal-day-pnl">${prefix}$${fmt(Math.abs(dayPnl))}</div>
+            <div class="cal-day-pnl">${masked(`${prefix}$${fmt(Math.abs(dayPnl))}`)}</div>
           </div>`;
         } else {
           rowHtml += `<div class="cal-day"><div class="cal-day-num">${dayNum}</div></div>`;
@@ -1506,7 +1540,7 @@ function renderCalendar() {
 
     if (weekHasData) {
       const prefix = weekTotal > 0 ? '+' : '';
-      const text = calendarMode === 'r' ? `${prefix}${fmt(weekTotal)}R` : `${prefix}$${fmt(Math.abs(weekTotal))}`;
+      const text = calendarMode === 'r' ? `${prefix}${fmt(weekTotal)}R` : masked(`${prefix}$${fmt(Math.abs(weekTotal))}`);
       rowHtml += `<div class="cal-week-cell" style="color:var(--${pnlColorVar(weekTotal)})">${text}</div>`;
     } else {
       rowHtml += `<div class="cal-week-cell cal-week-cell--empty">—</div>`;
@@ -1751,7 +1785,7 @@ function renderChart() {
   const yTickLabels = [];
   for (let t = 0; t <= yTicks; t++) {
     const v = vMin + (range * t / yTicks);
-    yTickLabels.push(statsMode === 'r' ? `${fmt(v)}R` : `$${fmt(v)}`);
+    yTickLabels.push(statsMode === 'r' ? `${fmt(v)}R` : masked(`$${fmt(v)}`));
   }
   const padLeft = Math.ceil(Math.max(...yTickLabels.map(s => ctx.measureText(s).width))) + 14;
   const padRight = 14, padTop = 16, padBottom = hasXLabels ? 26 : 14;
