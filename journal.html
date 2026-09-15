@@ -73,6 +73,8 @@
   .stat-sub { font-size: 12px; color: var(--text-secondary); margin-top: 5px; font-family: var(--sans); }
   .chart-legend { font-size: 11px; color: var(--text-secondary); margin-top: 4px; font-family: var(--mono); letter-spacing: 0.02em; }
   .edit-capital-btn { position: absolute; top: 12px; right: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; color: var(--text-secondary); cursor: pointer; padding: 4px 8px; font-size: 11px; }
+  .stat-card--editable { cursor: pointer; }
+  .stat-card--editable:hover { background: var(--bg-hover); }
 
   /* ─── CALENDAR & PANELS ─── */
   .panel-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.75rem; box-shadow: var(--shadow); }
@@ -225,8 +227,7 @@
     <div class="dashboard-grid">
       <!-- Grupo 1: Capital -->
       <div class="stat-group">
-        <div class="stat-card">
-          <button class="edit-capital-btn" id="btn-edit-capital" onclick="configurarCapital()">Editar</button>
+        <div class="stat-card stat-card--editable" id="stat-card-initial-cap" onclick="configurarCapital()" title="Haz clic para editar">
           <div class="stat-label" id="label-initial-cap">Capital Inicial Base</div>
           <div class="stat-value neutral" id="stat-initial-cap">—</div>
         </div>
@@ -551,6 +552,7 @@ const I18N = {
     capital_prompt: "Introduce tu Capital Inicial Base (ej. 10100 o 10100,50):",
     capital_invalid: "Por favor, introduce un número válido sin formato raro.",
     edit_capital_title: "Editar Capital Inicial Base",
+    edit_capital_hint: "Haz clic para editar",
     capital_placeholder: "Ej. 10100 o 10100,50",
     save: "Guardar",
     symbol_required: "El símbolo es obligatorio.",
@@ -644,6 +646,7 @@ const I18N = {
     capital_prompt: "Enter your Initial Base Capital (e.g. 10100 or 10100.50):",
     capital_invalid: "Please enter a valid number without unusual formatting.",
     edit_capital_title: "Edit Initial Base Capital",
+    edit_capital_hint: "Click to edit",
     capital_placeholder: "e.g. 10100 or 10100.50",
     save: "Save",
     symbol_required: "Symbol is required.",
@@ -1062,7 +1065,7 @@ function applyLanguage(newLang) {
   document.getElementById('chart-period-btn-year').textContent = i18n('chart_period_year');
   document.getElementById('chart-period-btn-all').textContent = i18n('chart_period_all');
 
-  document.getElementById('btn-edit-capital').textContent = i18n('edit');
+  document.getElementById('stat-card-initial-cap').title = i18n('edit_capital_hint');
   document.getElementById('label-initial-cap').textContent = i18n('initial_capital');
   document.getElementById('label-current-cap').textContent = i18n('current_capital');
   document.getElementById('label-winrate').textContent = i18n('win_rate');
