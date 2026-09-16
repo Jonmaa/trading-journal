@@ -520,11 +520,11 @@ const I18N = {
     r_avg: "R Promedio",
     equity_curve: "Curva de Equidad",
     r_curve: "Curva de R Acumulada",
-    chart_period_today: "Today",
+    chart_period_today: "Hoy",
     chart_period_week: "Semana",
     chart_period_month: "Mes",
     chart_period_year: "Año",
-    chart_period_all: "All",
+    chart_period_all: "Todo",
     chart_window_all_trades: "Todas las operaciones cerradas",
     no_data: "Sin datos",
     trades_with_r_year: "{n} operaciones con R este año",
@@ -1027,7 +1027,7 @@ async function exportData() {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  const stamp = new Date().toISOString().split('T')[0];
+  const stamp = toDateStr(new Date());
   a.href = url;
   a.download = `trading-diary-backup-${stamp}.json`;
   document.body.appendChild(a);
@@ -1122,7 +1122,7 @@ let monthNames = MONTH_NAMES_SHORT[lang];
 let fullMonthNames = MONTH_NAMES_FULL[lang];
 
 document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('f-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('f-date').value = toDateStr(new Date());
   migrateLegacyImagesToIndexedDb().catch((e) => {
     console.error('Fallo migrando capturas antiguas a IndexedDB:', e);
   }).finally(() => {
@@ -1971,7 +1971,7 @@ function openAddModal() {
   currentImage = null;
   currentImageBlob = null;
   imageWasRemoved = false;
-  document.getElementById('f-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('f-date').value = toDateStr(new Date());
   document.getElementById('f-symbol').value = '';
   document.getElementById('f-setup').value = '';
   document.getElementById('f-pnl').value = '';
@@ -2052,9 +2052,11 @@ async function saveTrade() {
   const pnlIsFilled = data.pnl !== '' && data.pnl !== null;
   if (pnlIsFilled && pnlWasEmpty) {
     // El P&L se acaba de rellenar: si ya existía el trade (se estaba editando para
-    // cerrarlo), la fecha de cierre es hoy; si se crea y se cierra a la vez, se
-    // asume que el cierre es el mismo día indicado en "Fecha".
-    data.closeDate = previousTrade ? new Date().toISOString().split('T')[0] : data.date;
+    // cerrarlo), la fecha de cierre es hoy (fecha LOCAL: con toISOString() aquí,
+    // justo despues de medianoche local todavia seria "ayer" en UTC, y ese trade
+    // no aparecia como "hoy" en la curva de equidad); si se crea y se cierra a la
+    // vez, se asume que el cierre es el mismo dia indicado en "Fecha".
+    data.closeDate = previousTrade ? toDateStr(new Date()) : data.date;
   } else if (!pnlIsFilled) {
     data.closeDate = '';
   }
