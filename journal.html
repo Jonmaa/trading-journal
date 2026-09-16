@@ -105,6 +105,7 @@
   .btn { display: inline-flex; align-items: center; gap: 7px; padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; border: none; font-family: var(--sans); }
   .btn-primary { background: var(--gold); color: var(--bg-primary); }
   .btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
   canvas#equityChart { width: 100% !important; height: 300px !important; margin-top: 20px; }
 
   /* ─── TABLE ─── */
@@ -219,6 +220,11 @@
         </thead>
         <tbody id="tradeTableBody"></tbody>
       </table>
+    </div>
+    <div class="pagination-bar" id="paginationBar" style="display:flex; align-items:center; justify-content:center; gap:14px; margin-top:14px; font-size:12px; color:var(--text-secondary);">
+      <button class="btn btn-ghost" id="btn-page-prev" style="padding:4px 12px; font-size:11px;" onclick="changeHistoryPage(-1)">‹ Anterior</button>
+      <span id="pagination-label">Página 1 de 1</span>
+      <button class="btn btn-ghost" id="btn-page-next" style="padding:4px 12px; font-size:11px;" onclick="changeHistoryPage(1)">Siguiente ›</button>
     </div>
   </div>
 
@@ -570,7 +576,10 @@ const I18N = {
     capital_placeholder: "Ej. 10100 o 10100,50",
     save: "Guardar",
     symbol_required: "El símbolo es obligatorio.",
-    confirm_delete: "¿Seguro que quieres borrar este trade?"
+    confirm_delete: "¿Seguro que quieres borrar este trade?",
+    pagination_prev: "Anterior",
+    pagination_next: "Siguiente",
+    pagination_label: "Página {page} de {total}"
   },
   en: {
     app_title: "Trading Diary — Trader's Journal",
@@ -671,7 +680,10 @@ const I18N = {
     capital_placeholder: "e.g. 10100 or 10100.50",
     save: "Save",
     symbol_required: "Symbol is required.",
-    confirm_delete: "Are you sure you want to delete this trade?"
+    confirm_delete: "Are you sure you want to delete this trade?",
+    pagination_prev: "Previous",
+    pagination_next: "Next",
+    pagination_label: "Page {page} of {total}"
   }
 };
 
@@ -1053,6 +1065,8 @@ let trades = loadTrades();
 let computedTrades = [];
 let editingId = null;
 let currentImage = null;
+const HISTORY_PAGE_SIZE = 15;
+let historyPage = 1;
 let statsMode = 'usd'; // 'usd' | 'r' — controla si el tab Rendimiento se ve en $ o en R
 let calendarMode = 'usd'; // 'usd' | 'r' — controla si el tab Calendario se ve en $ o en R
 let chartPeriod = 'all'; // 'today' | 'week' | 'month' | 'year' | 'all' — agrupación de la curva de equidad/R
@@ -1218,10 +1232,15 @@ function renderTable() {
 
   if (!sorted.length) {
     tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; padding: 2rem; color:var(--text-muted)">${i18n('no_trades')}</td></tr>`;
+    renderPaginationControls(0, 0);
     return;
   }
 
-  tbody.innerHTML = sorted.map(t => {
+  const totalPages = Math.max(1, Math.ceil(sorted.length / HISTORY_PAGE_SIZE));
+  historyPage = Math.min(Math.max(1, historyPage), totalPages);
+  const pageItems = sorted.slice((historyPage - 1) * HISTORY_PAGE_SIZE, historyPage * HISTORY_PAGE_SIZE);
+
+  tbody.innerHTML = pageItems.map(t => {
     const pnl = t.pnl !== '' && t.pnl !== null ? parseFloat(t.pnl) : null;
     const pnlText = pnl !== null ? masked(`${pnl >= 0 ? '+' : '-'}$${fmt(Math.abs(pnl))}`) : '—';
     const badgeCls = t.direction === 'LONG' ? 'badge-long' : 'badge-short';
@@ -1252,6 +1271,28 @@ function renderTable() {
       </td>
     </tr>`;
   }).join('');
+
+  renderPaginationControls(historyPage, totalPages);
+}
+
+function renderPaginationControls(page, totalPages) {
+  const bar = document.getElementById('paginationBar');
+  if (!bar) return;
+  if (totalPages <= 0) {
+    bar.style.display = 'none';
+    return;
+  }
+  bar.style.display = 'flex';
+  document.getElementById('btn-page-prev').textContent = '‹ ' + i18n('pagination_prev');
+  document.getElementById('btn-page-next').textContent = i18n('pagination_next') + ' ›';
+  document.getElementById('btn-page-prev').disabled = page <= 1;
+  document.getElementById('btn-page-next').disabled = page >= totalPages;
+  document.getElementById('pagination-label').textContent = i18n('pagination_label', { page, total: totalPages });
+}
+
+function changeHistoryPage(delta) {
+  historyPage += delta;
+  renderTable();
 }
 
 function formatDate(d) {
@@ -1816,6 +1857,7 @@ function saveTrade() {
     const newTrade = { id: Date.now(), ...data };
     trades.push(newTrade);
     if (!saveTradesToStorage()) { trades.pop(); return; }
+    historyPage = 1;
   }
 
   refreshApp();
