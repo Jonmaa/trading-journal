@@ -179,6 +179,9 @@
       ⬆ <span id="txt-import">Importar</span>
       <input type="file" accept="application/json" style="display:none;" onchange="importData(event)">
     </label>
+    <button class="btn btn-ghost" id="btn-optimize-images" style="padding:6px 12px; font-size:11px;" onclick="optimizeStoredImages()" title="Recomprime las capturas ya guardadas para liberar espacio">
+      🗜 <span id="txt-optimize-images">Optimizar imágenes</span>
+    </button>
     <span id="currentDate">—</span>
   </div>
 </header>
@@ -389,6 +392,7 @@
             <div class="upload-text" id="uploadText">Arrastra una imagen, haz clic para subirla, o pégala con Ctrl+V (⌘V) — copia la imagen en TradingView (icono de cámara → Copiar imagen) y pégala aquí</div>
             <img id="uploadPreview" class="upload-preview" alt="Preview">
           </div>
+          <button type="button" class="btn btn-ghost" id="btn-remove-image" style="display:none; margin-top:8px; padding:4px 10px; font-size:11px;" onclick="removeCurrentImage()">✕ <span id="txt-remove-image">Quitar imagen</span></button>
         </div>
       </div>
     </div>
@@ -548,6 +552,11 @@ const I18N = {
     corrupted_data: "No se pudieron leer tus operaciones guardadas (los datos parecían estar dañados). Se ha iniciado un historial vacío para que la app no se bloquee; tus datos originales siguen en el almacenamiento del navegador y no se han borrado.",
     storage_full_trade: "No se pudo guardar el cambio: el almacenamiento del navegador está lleno o bloqueado. Esta operación NO se ha guardado — considera exportar tus datos y liberar espacio (p.ej. capturas de pantalla grandes).",
     storage_full_capital: "No se pudo guardar el capital inicial (almacenamiento lleno o bloqueado). El valor no se ha guardado.",
+    remove_image_btn: "Quitar imagen",
+    optimize_images_btn: "Optimizar imágenes",
+    optimize_images_none: "No hay capturas guardadas para optimizar.",
+    optimize_images_confirm: "Se recomprimirán {n} capturas ya guardadas para liberar espacio. Esto reduce ligeramente su calidad visual pero siguen siendo perfectamente legibles. ¿Continuar?",
+    optimize_images_done: "Listo: se optimizaron {n} capturas y se liberaron aprox. {kb} KB de espacio.",
     import_invalid_json: "El archivo no es un backup de Trading Diary válido (JSON inválido).",
     import_invalid_format: "El archivo no tiene el formato esperado de un backup de Trading Diary.",
     import_confirm: "Se importarán {n} operaciones y sustituirán tu historial actual. ¿Continuar?",
@@ -644,6 +653,11 @@ const I18N = {
     corrupted_data: "Your saved trades couldn't be read (the data appeared to be corrupted). An empty history has been started so the app doesn't break; your original data is still in the browser's storage and has not been deleted.",
     storage_full_trade: "The change couldn't be saved: the browser's storage is full or blocked. This trade was NOT saved — consider exporting your data and freeing up space (e.g. large screenshots).",
     storage_full_capital: "The initial capital couldn't be saved (storage full or blocked). The value was not saved.",
+    remove_image_btn: "Remove image",
+    optimize_images_btn: "Optimize images",
+    optimize_images_none: "There are no saved screenshots to optimize.",
+    optimize_images_confirm: "{n} already-saved screenshots will be recompressed to free up space. This slightly reduces their visual quality but they remain perfectly readable. Continue?",
+    optimize_images_done: "Done: {n} screenshots were optimized, freeing approx. {kb} KB of space.",
     import_invalid_json: "The file isn't a valid Trading Diary backup (invalid JSON).",
     import_invalid_format: "The file doesn't have the expected format of a Trading Diary backup.",
     import_confirm: "{n} trades will be imported and will replace your current history. Continue?",
@@ -1073,6 +1087,8 @@ function applyLanguage(newLang) {
   document.title = i18n('app_title');
   document.getElementById('txt-export').textContent = i18n('export');
   document.getElementById('txt-import').textContent = i18n('import');
+  document.getElementById('txt-optimize-images').textContent = i18n('optimize_images_btn');
+  document.getElementById('txt-remove-image').textContent = i18n('remove_image_btn');
   document.getElementById('btn-journal').textContent = '📖 ' + i18n('tab_journal');
   document.getElementById('btn-stats').textContent = '📊 ' + i18n('tab_stats');
   document.getElementById('btn-calendar').textContent = '📅 ' + i18n('tab_calendar');
@@ -1552,14 +1568,118 @@ function renderCalendar() {
   }
 }
 
+// Las capturas de gráfico se guardan en el mismo localStorage que todo el
+// historial (una sola clave), y el navegador solo concede unos pocos MB en
+// total. Sin comprimir, unas pocas capturas de TradingView agotan ese
+// espacio y entonces CUALQUIER guardado empieza a fallar (no solo los que
+// llevan imagen). Por eso toda imagen se redimensiona/recomprime aquí antes
+// de guardarla.
+const IMAGE_MAX_DIMENSION = 1600;
+const IMAGE_JPEG_QUALITY = 0.75;
+
+function compressImageDataUrl(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let width = img.naturalWidth || img.width;
+      let height = img.naturalHeight || img.height;
+      if (!width || !height) { reject(new Error('Imagen sin dimensiones')); return; }
+      if (width > IMAGE_MAX_DIMENSION || height > IMAGE_MAX_DIMENSION) {
+        if (width >= height) {
+          height = Math.round(height * (IMAGE_MAX_DIMENSION / width));
+          width = IMAGE_MAX_DIMENSION;
+        } else {
+          width = Math.round(width * (IMAGE_MAX_DIMENSION / height));
+          height = IMAGE_MAX_DIMENSION;
+        }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      // Fondo blanco por si la imagen original tiene transparencia (evita bordes negros al pasar a JPEG)
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0, width, height);
+      try {
+        resolve(canvas.toDataURL('image/jpeg', IMAGE_JPEG_QUALITY));
+      } catch (e) {
+        reject(e);
+      }
+    };
+    img.onerror = () => reject(new Error('No se pudo cargar la imagen'));
+    img.src = dataUrl;
+  });
+}
+
+function applyTradeImage(dataUrl) {
+  currentImage = dataUrl;
+  document.getElementById('uploadPreview').src = currentImage;
+  document.getElementById('uploadPreview').style.display = 'block';
+  document.getElementById('uploadText').style.display = 'none';
+  updateRemoveImageBtn();
+}
+
+function removeCurrentImage() {
+  currentImage = null;
+  const fileInput = document.getElementById('f-image');
+  if (fileInput) fileInput.value = '';
+  document.getElementById('uploadPreview').style.display = 'none';
+  document.getElementById('uploadPreview').src = '';
+  document.getElementById('uploadText').style.display = 'block';
+  updateRemoveImageBtn();
+}
+
+function updateRemoveImageBtn() {
+  const btn = document.getElementById('btn-remove-image');
+  if (btn) btn.style.display = currentImage ? 'inline-flex' : 'none';
+}
+
+// Recomprime todas las capturas ya guardadas en el historial (no solo las
+// nuevas), para poder liberar espacio inmediatamente cuando el
+// almacenamiento ya está lleno, sin tener que borrar trades a mano.
+async function optimizeStoredImages() {
+  const withImages = trades.filter(t => t.image);
+  if (withImages.length === 0) {
+    alert(i18n('optimize_images_none'));
+    return;
+  }
+  if (!confirm(i18n('optimize_images_confirm', { n: withImages.length }))) return;
+
+  const sizeBefore = JSON.stringify(trades).length;
+  let optimizedCount = 0;
+  for (const t of withImages) {
+    try {
+      const compressed = await compressImageDataUrl(t.image);
+      if (compressed.length < t.image.length) {
+        t.image = compressed;
+        optimizedCount++;
+      }
+    } catch (e) {
+      console.error('No se pudo optimizar la imagen del trade', t.id, e);
+    }
+  }
+  const sizeAfter = JSON.stringify(trades).length;
+  const savedKB = Math.max(0, Math.round((sizeBefore - sizeAfter) / 1024));
+
+  if (saveTradesToStorage()) {
+    alert(i18n('optimize_images_done', { n: optimizedCount, kb: savedKB }));
+    refreshApp();
+  } else {
+    alert(i18n('storage_full_trade'));
+  }
+}
+
 function setTradeImageFromFile(file) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = (ev) => {
-    currentImage = ev.target.result;
-    document.getElementById('uploadPreview').src = currentImage;
-    document.getElementById('uploadPreview').style.display = 'block';
-    document.getElementById('uploadText').style.display = 'none';
+    compressImageDataUrl(ev.target.result)
+      .then((compressed) => applyTradeImage(compressed))
+      .catch((e) => {
+        console.error('No se pudo comprimir la imagen, se guarda sin comprimir:', e);
+        applyTradeImage(ev.target.result);
+      });
   };
   reader.readAsDataURL(file);
 }
@@ -1623,6 +1743,7 @@ function openAddModal() {
   document.getElementById('f-notes').value = '';
   document.getElementById('uploadPreview').style.display = 'none';
   document.getElementById('uploadText').style.display = 'block';
+  updateRemoveImageBtn();
   document.getElementById('addModal').classList.add('open');
 }
 
@@ -1653,6 +1774,7 @@ function openEditModal(id) {
     document.getElementById('uploadPreview').style.display = 'none';
     document.getElementById('uploadText').style.display = 'block';
   }
+  updateRemoveImageBtn();
   document.getElementById('addModal').classList.add('open');
 }
 
