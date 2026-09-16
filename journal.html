@@ -795,12 +795,13 @@ function toDateStr(d) {
 }
 
 // Capital acumulado justo ANTES de dateStr (capital inicial + el P&L de todos
-// los trades cerrados con fecha anterior). `closed` debe venir ordenado
-// cronológicamente asc, tal cual sale de computedTrades.
+// los trades cuya fecha de cierre efectiva es anterior). Ordena su propia
+// copia por fecha de cierre: no asume que `closed` ya venga en ese orden.
 function balanceBeforeDate(closed, dateStr) {
   let bal = initialCapital;
-  for (const t of closed) {
-    if (t.date >= dateStr) break;
+  const byCloseDate = [...closed].sort((a, b) => effectiveDate(a).localeCompare(effectiveDate(b)));
+  for (const t of byCloseDate) {
+    if (effectiveDate(t) >= dateStr) break;
     bal += parseFloat(t.pnl);
   }
   return bal;
@@ -833,7 +834,8 @@ function buildWindowSeries(period, closed) {
 
   const dailyPnl = new Map();
   closed.forEach(t => {
-    dailyPnl.set(t.date, (dailyPnl.get(t.date) || 0) + parseFloat(t.pnl));
+    const d = effectiveDate(t);
+    dailyPnl.set(d, (dailyPnl.get(d) || 0) + parseFloat(t.pnl));
   });
 
   const points = [];
@@ -880,7 +882,7 @@ function buildWindowSeries(period, closed) {
 function buildTodaySeries(closed) {
   const todayStr = toDateStr(new Date());
   const baselineBalance = balanceBeforeDate(closed, todayStr);
-  const todaysTrades = closed.filter(t => t.date === todayStr);
+  const todaysTrades = closed.filter(t => effectiveDate(t) === todayStr);
   let balance = baselineBalance;
   const points = todaysTrades.map(t => {
     balance += parseFloat(t.pnl);
@@ -1318,7 +1320,7 @@ function updateStats() {
     const monthlyR = {};
 
     withR.forEach(({ t, r }) => {
-      const { year: y, month: m } = parseYearMonth(t.date);
+      const { year: y, month: m } = parseYearMonth(effectiveDate(t));
       if (y === cYear) {
         ytdR += r; ytdCount++;
         if (m === cMonth) { monthR += r; monthCount++; }
@@ -1360,7 +1362,7 @@ function updateStats() {
   const monthlyData = {}; 
 
   closed.forEach(t => {
-    const { year: y, month: m } = parseYearMonth(t.date);
+    const { year: y, month: m } = parseYearMonth(effectiveDate(t));
     const p = parseFloat(t.pnl);
     
     if (y === cYear) {
