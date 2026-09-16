@@ -998,12 +998,31 @@ function saveCapitalToStorage(value) {
   }
 }
 
-function exportData() {
+async function exportData() {
+  // Las capturas viven en IndexedDB para ahorrar espacio en el día a día,
+  // pero el backup exportado debe ser un único JSON portable y autocontenido
+  // (para poder restaurarlo en otro navegador/ordenador), así que aquí se
+  // vuelven a convertir a base64 e insertarse en cada trade.
+  const tradesForExport = [];
+  for (const t of trades) {
+    const clone = { ...t };
+    if (t.hasImage) {
+      try {
+        const blob = await idbGetImage(t.id);
+        if (blob) clone.image = await blobToDataUrl(blob);
+      } catch (e) {
+        console.error('No se pudo incluir la captura del trade en la exportación:', t.id, e);
+      }
+      delete clone.hasImage;
+    }
+    tradesForExport.push(clone);
+  }
+
   const payload = {
     app: 'Trading Diary',
     exportedAt: new Date().toISOString(),
     initialCapital: initialCapital,
-    trades: trades
+    trades: tradesForExport
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -1021,7 +1040,7 @@ function importData(event) {
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = (ev) => {
+  reader.onload = async (ev) => {
     let payload;
     try {
       payload = JSON.parse(ev.target.result);
@@ -1041,7 +1060,27 @@ function importData(event) {
     }
     const previousTrades = trades;
     const previousCapital = initialCapital;
-    trades = payload.trades;
+
+    // El backup trae las capturas en base64 (formato portable); se guardan en
+    // IndexedDB igual que las nuevas, y el trade importado solo se queda con
+    // el flag "hasImage" para no volver a llenar el localStorage.
+    const importedTrades = [];
+    for (const t of payload.trades) {
+      const clone = { ...t };
+      if (typeof clone.image === 'string' && clone.image.startsWith('data:')) {
+        try {
+          const blob = await dataUrlToBlob(clone.image);
+          await idbPutImage(clone.id, blob);
+          clone.hasImage = true;
+        } catch (e) {
+          console.error('No se pudo importar la captura del trade:', clone.id, e);
+        }
+      }
+      delete clone.image;
+      importedTrades.push(clone);
+    }
+
+    trades = importedTrades;
     if (typeof payload.initialCapital === 'number' && payload.initialCapital > 0) {
       initialCapital = payload.initialCapital;
     }
@@ -1065,6 +1104,10 @@ let trades = loadTrades();
 let computedTrades = [];
 let editingId = null;
 let currentImage = null;
+let currentImageBlob = null;
+let imageWasRemoved = false;
+let thumbObjectUrls = [];
+let currentLightboxUrl = null;
 const HISTORY_PAGE_SIZE = 15;
 let historyPage = 1;
 let statsMode = 'usd'; // 'usd' | 'r' — controla si el tab Rendimiento se ve en $ o en R
@@ -1080,7 +1123,11 @@ let fullMonthNames = MONTH_NAMES_FULL[lang];
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('f-date').value = new Date().toISOString().split('T')[0];
-  applyLanguage(lang);
+  migrateLegacyImagesToIndexedDb().catch((e) => {
+    console.error('Fallo migrando capturas antiguas a IndexedDB:', e);
+  }).finally(() => {
+    applyLanguage(lang);
+  });
 });
 
 function updateHeaderDate() {
@@ -1251,7 +1298,9 @@ function renderTable() {
 
     const chartBtn = t.image 
       ? `<button class="thumb-btn" onclick="openLightbox('${t.id}')"><img src="${t.image}"></button>`
-      : `<span style="font-size:11px; opacity:0.5;">${i18n('no_image')}</span>`;
+      : t.hasImage
+        ? `<button class="thumb-btn" onclick="openLightbox('${t.id}')"><img data-thumb-for="${t.id}" alt=""></button>`
+        : `<span style="font-size:11px; opacity:0.5;">${i18n('no_image')}</span>`;
 
     return `<tr>
       <td class="cell-mono">${formatDate(t.date)}</td>
@@ -1272,7 +1321,27 @@ function renderTable() {
     </tr>`;
   }).join('');
 
+  loadVisibleThumbnails(pageItems);
   renderPaginationControls(historyPage, totalPages);
+}
+
+// Las miniaturas de la tabla viven en IndexedDB, así que se cargan de forma
+// asíncrona después de pintar la fila (con un placeholder mientras tanto).
+function loadVisibleThumbnails(items) {
+  thumbObjectUrls.forEach(u => URL.revokeObjectURL(u));
+  thumbObjectUrls = [];
+  items.filter(t => t.hasImage && !t.image).forEach(async (t) => {
+    try {
+      const blob = await idbGetImage(t.id);
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      thumbObjectUrls.push(url);
+      const img = document.querySelector(`img[data-thumb-for="${t.id}"]`);
+      if (img) img.src = url;
+    } catch (e) {
+      console.error('No se pudo cargar la miniatura del trade', t.id, e);
+    }
+  });
 }
 
 function renderPaginationControls(page, totalPages) {
@@ -1609,52 +1678,147 @@ function renderCalendar() {
   }
 }
 
-// Las capturas de gráfico se guardan en el mismo localStorage que todo el
-// historial (una sola clave), y el navegador solo concede unos pocos MB en
-// total. Sin comprimir, unas pocas capturas de TradingView agotan ese
-// espacio y entonces CUALQUIER guardado empieza a fallar (no solo los que
-// llevan imagen). Por eso toda imagen se redimensiona/recomprime aquí antes
-// de guardarla.
+// Las capturas de gráfico vivían antes en el mismo localStorage que todo el
+// historial (base64 dentro del propio trade), y el navegador solo concede
+// unos pocos MB en total para esa clave. A partir de esta versión las
+// capturas se guardan en IndexedDB aparte (muchísimo más margen: cientos de
+// MB o más), y cada trade solo lleva un flag "hasImage". Se siguen
+// redimensionando/recomprimiendo antes de guardarse para que pesen poco
+// tanto en disco como en los backups exportados.
 const IMAGE_MAX_DIMENSION = 1600;
 const IMAGE_JPEG_QUALITY = 0.75;
+const IMAGE_DB_NAME = 'tradelog_images_db';
+const IMAGE_DB_VERSION = 1;
+const IMAGE_STORE_NAME = 'images';
+let imageDbPromise = null;
 
-function compressImageDataUrl(dataUrl) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      let width = img.naturalWidth || img.width;
-      let height = img.naturalHeight || img.height;
-      if (!width || !height) { reject(new Error('Imagen sin dimensiones')); return; }
-      if (width > IMAGE_MAX_DIMENSION || height > IMAGE_MAX_DIMENSION) {
-        if (width >= height) {
-          height = Math.round(height * (IMAGE_MAX_DIMENSION / width));
-          width = IMAGE_MAX_DIMENSION;
-        } else {
-          width = Math.round(width * (IMAGE_MAX_DIMENSION / height));
-          height = IMAGE_MAX_DIMENSION;
-        }
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      // Fondo blanco por si la imagen original tiene transparencia (evita bordes negros al pasar a JPEG)
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, width, height);
-      ctx.drawImage(img, 0, 0, width, height);
-      try {
-        resolve(canvas.toDataURL('image/jpeg', IMAGE_JPEG_QUALITY));
-      } catch (e) {
-        reject(e);
+function openImageDb() {
+  if (imageDbPromise) return imageDbPromise;
+  imageDbPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(IMAGE_DB_NAME, IMAGE_DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IMAGE_STORE_NAME)) {
+        db.createObjectStore(IMAGE_STORE_NAME);
       }
     };
-    img.onerror = () => reject(new Error('No se pudo cargar la imagen'));
-    img.src = dataUrl;
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return imageDbPromise;
+}
+
+function idbPutImage(tradeId, blob) {
+  return openImageDb().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction(IMAGE_STORE_NAME, 'readwrite');
+    tx.objectStore(IMAGE_STORE_NAME).put(blob, String(tradeId));
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  }));
+}
+
+function idbGetImage(tradeId) {
+  return openImageDb().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction(IMAGE_STORE_NAME, 'readonly');
+    const req = tx.objectStore(IMAGE_STORE_NAME).get(String(tradeId));
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  }));
+}
+
+function idbDeleteImage(tradeId) {
+  return openImageDb().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction(IMAGE_STORE_NAME, 'readwrite');
+    tx.objectStore(IMAGE_STORE_NAME).delete(String(tradeId));
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  }));
+}
+
+function dataUrlToBlob(dataUrl) {
+  return fetch(dataUrl).then((r) => r.blob());
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
   });
 }
 
-function applyTradeImage(dataUrl) {
-  currentImage = dataUrl;
+function loadImageFromSrc(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('No se pudo cargar la imagen'));
+    img.src = src;
+  });
+}
+
+function drawResizedCanvas(img) {
+  let width = img.naturalWidth || img.width;
+  let height = img.naturalHeight || img.height;
+  if (!width || !height) throw new Error('Imagen sin dimensiones');
+  if (width > IMAGE_MAX_DIMENSION || height > IMAGE_MAX_DIMENSION) {
+    if (width >= height) {
+      height = Math.round(height * (IMAGE_MAX_DIMENSION / width));
+      width = IMAGE_MAX_DIMENSION;
+    } else {
+      width = Math.round(width * (IMAGE_MAX_DIMENSION / height));
+      height = IMAGE_MAX_DIMENSION;
+    }
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  // Fondo blanco por si la imagen original tiene transparencia (evita bordes negros al pasar a JPEG)
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(img, 0, 0, width, height);
+  return canvas;
+}
+
+function compressToBlob(src) {
+  return loadImageFromSrc(src).then((img) => {
+    const canvas = drawResizedCanvas(img);
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob); else reject(new Error('No se pudo generar la imagen comprimida'));
+      }, 'image/jpeg', IMAGE_JPEG_QUALITY);
+    });
+  });
+}
+
+// Migración única: las versiones anteriores guardaban la captura de cada
+// trade en base64 dentro del propio array de trades (localStorage), lo cual
+// agotaba enseguida el poco espacio que da el navegador. La primera vez que
+// se carga esta versión, cualquier imagen que quede en ese formato antiguo
+// se traslada a IndexedDB y el trade se queda solo con el flag "hasImage".
+async function migrateLegacyImagesToIndexedDb() {
+  const legacyTrades = trades.filter(t => typeof t.image === 'string' && t.image.length > 0);
+  if (!legacyTrades.length) return;
+  let migratedCount = 0;
+  for (const t of legacyTrades) {
+    try {
+      const blob = await dataUrlToBlob(t.image);
+      await idbPutImage(t.id, blob);
+      delete t.image;
+      t.hasImage = true;
+      migratedCount++;
+    } catch (e) {
+      console.error('No se pudo migrar la captura del trade a IndexedDB, se deja en el formato antiguo por ahora:', t.id, e);
+    }
+  }
+  if (migratedCount > 0) saveTradesToStorage();
+}
+
+function applyTradeImage(previewSrc, blob) {
+  currentImage = previewSrc;
+  currentImageBlob = blob;
+  imageWasRemoved = false;
   document.getElementById('uploadPreview').src = currentImage;
   document.getElementById('uploadPreview').style.display = 'block';
   document.getElementById('uploadText').style.display = 'none';
@@ -1663,6 +1827,8 @@ function applyTradeImage(dataUrl) {
 
 function removeCurrentImage() {
   currentImage = null;
+  currentImageBlob = null;
+  imageWasRemoved = true;
   const fileInput = document.getElementById('f-image');
   if (fileInput) fileInput.value = '';
   document.getElementById('uploadPreview').style.display = 'none';
@@ -1676,31 +1842,41 @@ function updateRemoveImageBtn() {
   if (btn) btn.style.display = currentImage ? 'inline-flex' : 'none';
 }
 
-// Recomprime todas las capturas ya guardadas en el historial (no solo las
-// nuevas), para poder liberar espacio inmediatamente cuando el
-// almacenamiento ya está lleno, sin tener que borrar trades a mano.
+// Recomprime todas las capturas ya guardadas (en IndexedDB, o en el formato
+// antiguo si a alguna no le dio tiempo a migrarse), para reducir el espacio
+// que ocupan en disco y en los backups exportados.
 async function optimizeStoredImages() {
-  const withImages = trades.filter(t => t.image);
+  const withImages = trades.filter(t => t.hasImage || t.image);
   if (withImages.length === 0) {
     alert(i18n('optimize_images_none'));
     return;
   }
   if (!confirm(i18n('optimize_images_confirm', { n: withImages.length }))) return;
 
-  const sizeBefore = JSON.stringify(trades).length;
+  let sizeBefore = 0;
+  let sizeAfter = 0;
   let optimizedCount = 0;
   for (const t of withImages) {
     try {
-      const compressed = await compressImageDataUrl(t.image);
-      if (compressed.length < t.image.length) {
-        t.image = compressed;
-        optimizedCount++;
+      const blob = t.hasImage ? await idbGetImage(t.id) : (t.image ? await dataUrlToBlob(t.image) : null);
+      if (!blob) continue;
+      sizeBefore += blob.size;
+      const objectUrl = URL.createObjectURL(blob);
+      let newBlob;
+      try {
+        newBlob = await compressToBlob(objectUrl);
+      } finally {
+        URL.revokeObjectURL(objectUrl);
       }
+      const finalBlob = newBlob.size < blob.size ? newBlob : blob;
+      if (newBlob.size < blob.size) optimizedCount++;
+      await idbPutImage(t.id, finalBlob);
+      sizeAfter += finalBlob.size;
+      if (t.image) { delete t.image; t.hasImage = true; }
     } catch (e) {
       console.error('No se pudo optimizar la imagen del trade', t.id, e);
     }
   }
-  const sizeAfter = JSON.stringify(trades).length;
   const savedKB = Math.max(0, Math.round((sizeBefore - sizeAfter) / 1024));
 
   if (saveTradesToStorage()) {
@@ -1715,11 +1891,14 @@ function setTradeImageFromFile(file) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = (ev) => {
-    compressImageDataUrl(ev.target.result)
-      .then((compressed) => applyTradeImage(compressed))
+    const rawDataUrl = ev.target.result;
+    compressToBlob(rawDataUrl)
+      .then((blob) => applyTradeImage(URL.createObjectURL(blob), blob))
       .catch((e) => {
         console.error('No se pudo comprimir la imagen, se guarda sin comprimir:', e);
-        applyTradeImage(ev.target.result);
+        dataUrlToBlob(rawDataUrl)
+          .then((blob) => applyTradeImage(URL.createObjectURL(blob), blob))
+          .catch((e2) => console.error('No se pudo preparar la imagen:', e2));
       });
   };
   reader.readAsDataURL(file);
@@ -1751,14 +1930,30 @@ function handleClipboardPaste(e) {
 }
 document.addEventListener('paste', handleClipboardPaste);
 
-function openLightbox(id) {
+async function openLightbox(id) {
   const t = trades.find(tr => tr.id == id);
-  if (t && t.image) {
-    document.getElementById('lightboxImg').src = t.image;
-    document.getElementById('lightbox').classList.add('open');
+  if (!t) return;
+  let src = null;
+  if (t.image) {
+    src = t.image;
+  } else if (t.hasImage) {
+    try {
+      const blob = await idbGetImage(t.id);
+      if (blob) src = URL.createObjectURL(blob);
+    } catch (e) {
+      console.error('No se pudo cargar la captura del trade', t.id, e);
+    }
   }
+  if (!src) return;
+  if (currentLightboxUrl) { URL.revokeObjectURL(currentLightboxUrl); currentLightboxUrl = null; }
+  if (src.startsWith('blob:')) currentLightboxUrl = src;
+  document.getElementById('lightboxImg').src = src;
+  document.getElementById('lightbox').classList.add('open');
 }
-function closeLightbox() { document.getElementById('lightbox').classList.remove('open'); }
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('open');
+  if (currentLightboxUrl) { URL.revokeObjectURL(currentLightboxUrl); currentLightboxUrl = null; }
+}
 
 function showNotes(id) {
   const t = trades.find(tr => tr.id === id);
@@ -1774,6 +1969,8 @@ function closeNotesModalIfOverlay(e) { if (e.target.id === 'notesModal') closeNo
 function openAddModal() {
   editingId = null;
   currentImage = null;
+  currentImageBlob = null;
+  imageWasRemoved = false;
   document.getElementById('f-date').value = new Date().toISOString().split('T')[0];
   document.getElementById('f-symbol').value = '';
   document.getElementById('f-setup').value = '';
@@ -1796,7 +1993,9 @@ function openEditModal(id) {
   if (!t) return;
   editingId = id;
   currentImage = t.image || null;
-  
+  currentImageBlob = null;
+  imageWasRemoved = false;
+
   document.getElementById('f-date').value = t.date;
   document.getElementById('f-symbol').value = t.symbol;
   document.getElementById('f-direction').value = t.direction;
@@ -1817,9 +2016,22 @@ function openEditModal(id) {
   }
   updateRemoveImageBtn();
   document.getElementById('addModal').classList.add('open');
+
+  // La miniatura puede vivir en IndexedDB; se carga aparte para no retrasar
+  // la apertura del modal, y solo se aplica si se sigue editando ESTE trade.
+  if (!currentImage && t.hasImage) {
+    idbGetImage(t.id).then((blob) => {
+      if (!blob || editingId !== id) return;
+      currentImage = URL.createObjectURL(blob);
+      document.getElementById('uploadPreview').src = currentImage;
+      document.getElementById('uploadPreview').style.display = 'block';
+      document.getElementById('uploadText').style.display = 'none';
+      updateRemoveImageBtn();
+    }).catch((e) => console.error('No se pudo cargar la captura del trade', t.id, e));
+  }
 }
 
-function saveTrade() {
+async function saveTrade() {
   const data = {
     date: document.getElementById('f-date').value,
     symbol: document.getElementById('f-symbol').value.toUpperCase(),
@@ -1829,8 +2041,7 @@ function saveTrade() {
     entry: document.getElementById('f-entry').value,
     stop: document.getElementById('f-stop').value,
     exit: document.getElementById('f-exit').value,
-    notes: document.getElementById('f-notes').value,
-    image: currentImage
+    notes: document.getElementById('f-notes').value
   };
 
   if (!data.symbol) { alert(i18n('symbol_required')); return; }
@@ -1848,13 +2059,37 @@ function saveTrade() {
     data.closeDate = '';
   }
 
+  const tradeId = editingId || Date.now();
+
+  // La captura vive en IndexedDB aparte del array de trades. Si no se ha
+  // tocado la imagen en este modal (ni subido una nueva ni pulsado "Quitar
+  // imagen"), la que ya hubiera guardada se deja tal cual.
+  let hasImage = previousTrade ? !!(previousTrade.hasImage || previousTrade.image) : false;
+  try {
+    if (currentImageBlob) {
+      await idbPutImage(tradeId, currentImageBlob);
+      hasImage = true;
+    } else if (imageWasRemoved) {
+      await idbDeleteImage(tradeId);
+      hasImage = false;
+    }
+  } catch (e) {
+    console.error('No se pudo guardar la captura:', e);
+    alert(i18n('storage_full_trade'));
+    return;
+  }
+  data.hasImage = hasImage;
+
   if (editingId) {
     const idx = trades.findIndex(t => t.id === editingId);
     const previous = trades[idx];
-    trades[idx] = { ...trades[idx], ...data };
+    const merged = { ...trades[idx], ...data };
+    delete merged.image;
+    trades[idx] = merged;
     if (!saveTradesToStorage()) { trades[idx] = previous; return; }
   } else {
-    const newTrade = { id: Date.now(), ...data };
+    const newTrade = { id: tradeId, ...data };
+    delete newTrade.image;
     trades.push(newTrade);
     if (!saveTradesToStorage()) { trades.pop(); return; }
     historyPage = 1;
@@ -1867,8 +2102,12 @@ function saveTrade() {
 function deleteTrade(id) {
   if (confirm(i18n('confirm_delete'))) {
     const previous = trades;
+    const deletedTrade = trades.find(t => t.id === id);
     trades = trades.filter(t => t.id !== id);
     if (!saveTradesToStorage()) { trades = previous; return; }
+    if (deletedTrade && (deletedTrade.hasImage || deletedTrade.image)) {
+      idbDeleteImage(id).catch((e) => console.error('No se pudo borrar la captura del trade eliminado', id, e));
+    }
     refreshApp();
   }
 }
