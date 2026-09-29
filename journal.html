@@ -201,6 +201,15 @@
       <h2 style="font-size: 16px; font-weight: 600;" id="h-operations">Tus Operaciones</h2>
       <button class="btn btn-primary" id="btn-new-trade" onclick="openAddModal()">+ Nuevo Trade</button>
     </div>
+    <div class="history-toolbar" id="historyToolbar" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px;">
+      <input type="search" class="form-input" id="history-search" style="flex:1 1 220px; min-width:180px; max-width:360px; padding:8px 12px;" placeholder="Buscar activo, setup, notas..." aria-label="Buscar" autocomplete="off" oninput="setHistorySearch(this.value)">
+      <div class="mode-toggle" id="history-status-toggle">
+        <button class="mode-btn active" id="history-filter-btn-all" onclick="setHistoryStatusFilter('all')">Todas</button>
+        <button class="mode-btn" id="history-filter-btn-open" onclick="setHistoryStatusFilter('open')">Abiertas</button>
+        <button class="mode-btn" id="history-filter-btn-closed" onclick="setHistoryStatusFilter('closed')">Cerradas</button>
+      </div>
+      <span id="history-count" style="font-size:12px; color:var(--text-secondary); margin-left:auto;"></span>
+    </div>
     <div class="table-wrapper">
       <table class="trade-table">
         <thead>
@@ -579,7 +588,14 @@ const I18N = {
     confirm_delete: "¿Seguro que quieres borrar este trade?",
     pagination_prev: "Anterior",
     pagination_next: "Siguiente",
-    pagination_label: "Página {page} de {total}"
+    pagination_label: "Página {page} de {total}",
+    filter_all: "Todas",
+    filter_open: "Abiertas",
+    filter_closed: "Cerradas",
+    search_placeholder: "Buscar activo, setup, notas...",
+    search_label: "Buscar",
+    history_count: "{shown} de {total} operaciones",
+    no_trades_match: "Ninguna operación coincide con el filtro o la búsqueda."
   },
   en: {
     app_title: "Trading Diary — Trader's Journal",
@@ -683,7 +699,14 @@ const I18N = {
     confirm_delete: "Are you sure you want to delete this trade?",
     pagination_prev: "Previous",
     pagination_next: "Next",
-    pagination_label: "Page {page} of {total}"
+    pagination_label: "Page {page} of {total}",
+    filter_all: "All",
+    filter_open: "Open",
+    filter_closed: "Closed",
+    search_placeholder: "Search symbol, setup, notes...",
+    search_label: "Search",
+    history_count: "{shown} of {total} trades",
+    no_trades_match: "No trades match the current filter or search."
   }
 };
 
@@ -1110,6 +1133,8 @@ let thumbObjectUrls = [];
 let currentLightboxUrl = null;
 const HISTORY_PAGE_SIZE = 15;
 let historyPage = 1;
+let historyStatusFilter = 'all'; // 'all' | 'open' | 'closed'
+let historySearch = '';
 let statsMode = 'usd'; // 'usd' | 'r' — controla si el tab Rendimiento se ve en $ o en R
 let calendarMode = 'usd'; // 'usd' | 'r' — controla si el tab Calendario se ve en $ o en R
 let chartPeriod = 'all'; // 'today' | 'week' | 'month' | 'year' | 'all' — agrupación de la curva de equidad/R
@@ -1150,6 +1175,11 @@ function applyLanguage(newLang) {
   document.getElementById('txt-import').textContent = i18n('import');
   document.getElementById('txt-optimize-images').textContent = i18n('optimize_images_btn');
   document.getElementById('txt-remove-image').textContent = i18n('remove_image_btn');
+  document.getElementById('history-filter-btn-all').textContent = i18n('filter_all');
+  document.getElementById('history-filter-btn-open').textContent = i18n('filter_open');
+  document.getElementById('history-filter-btn-closed').textContent = i18n('filter_closed');
+  document.getElementById('history-search').placeholder = i18n('search_placeholder');
+  document.getElementById('history-search').setAttribute('aria-label', i18n('search_label'));
   document.getElementById('btn-journal').textContent = '📖 ' + i18n('tab_journal');
   document.getElementById('btn-stats').textContent = '📊 ' + i18n('tab_stats');
   document.getElementById('btn-calendar').textContent = '📅 ' + i18n('tab_calendar');
@@ -1275,10 +1305,15 @@ function handleSetupBlur(input) {
 
 function renderTable() {
   const tbody = document.getElementById('tradeTableBody');
-  const sorted = [...computedTrades].reverse(); 
+  const allSorted = [...computedTrades].reverse();
+  const sorted = allSorted.filter(matchesHistoryFilters); 
+
+  updateHistoryCount(sorted.length, allSorted.length);
 
   if (!sorted.length) {
-    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; padding: 2rem; color:var(--text-muted)">${i18n('no_trades')}</td></tr>`;
+    // Sin trades en absoluto vs. hay trades pero el filtro/búsqueda no deja ninguno
+    const emptyMsg = allSorted.length ? i18n('no_trades_match') : i18n('no_trades');
+    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; padding: 2rem; color:var(--text-muted)">${emptyMsg}</td></tr>`;
     renderPaginationControls(0, 0);
     return;
   }
@@ -1362,6 +1397,60 @@ function renderPaginationControls(page, totalPages) {
 function changeHistoryPage(delta) {
   historyPage += delta;
   renderTable();
+}
+
+// "Cerrada" = ya tiene P&L (mismo criterio que el resto de la app); "abierta" = sin P&L.
+function isTradeClosed(t) {
+  return t.pnl !== '' && t.pnl !== null && t.pnl !== undefined;
+}
+
+// Minúsculas y sin tildes, para que "opcion" encuentre "Opción".
+function normalizeSearchText(s) {
+  return String(s == null ? '' : s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function matchesHistoryFilters(t) {
+  if (historyStatusFilter === 'open' && isTradeClosed(t)) return false;
+  if (historyStatusFilter === 'closed' && !isTradeClosed(t)) return false;
+
+  const terms = normalizeSearchText(historySearch).split(/\s+/).filter(Boolean);
+  if (!terms.length) return true;
+
+  const haystack = normalizeSearchText([
+    t.symbol,
+    t.setup,
+    localizeSetup(t.setup, lang),
+    t.direction,
+    t.notes,
+    t.date,
+    formatDate(t.date),
+    t.closeDate,
+    t.closeDate ? formatDate(t.closeDate) : ''
+  ].join(' \n '));
+  // Todas las palabras escritas tienen que aparecer (en cualquier campo)
+  return terms.every(term => haystack.includes(term));
+}
+
+function setHistorySearch(value) {
+  historySearch = value || '';
+  historyPage = 1;
+  renderTable();
+}
+
+function setHistoryStatusFilter(filter) {
+  historyStatusFilter = filter;
+  historyPage = 1;
+  ['all', 'open', 'closed'].forEach(f => {
+    const btn = document.getElementById('history-filter-btn-' + f);
+    if (btn) btn.classList.toggle('active', f === filter);
+  });
+  renderTable();
+}
+
+function updateHistoryCount(shown, total) {
+  const el = document.getElementById('history-count');
+  if (!el) return;
+  el.textContent = total ? i18n('history_count', { shown, total }) : '';
 }
 
 function formatDate(d) {
