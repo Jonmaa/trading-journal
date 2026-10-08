@@ -70,6 +70,10 @@ const PERIODS = ['today', 'week', 'month', 'year', 'all'];
       const d = firstDiff(S0.calendar[k], S1.calendar[k]);
       if (d) problems.push('calendar ' + k + ' ' + d);
     }
+    // % anual y % del mes (octubre, todos sus trades son anteriores a la fecha del evento)
+    for (const id of ['stat-ytd-pct', 'stat-ytd-sub', 'stat-month-pct', 'stat-month-sub']) {
+      if (S0.stats.usd[id] !== S1.stats.usd[id]) problems.push('stats usd ' + id);
+    }
     for (const m of ['usd', 'r']) {
       const rows = (s) => s.stats[m].monthly.filter(r => r.startsWith('Ago 2026') || r.startsWith('Sep 2026'));
       if (JSON.stringify(rows(S0)) !== JSON.stringify(rows(S1)) || rows(S0).length !== 2) problems.push('monthly ' + m);

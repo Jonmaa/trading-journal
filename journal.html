@@ -152,6 +152,12 @@
   .upload-preview { width: 100%; max-height: 200px; object-fit: cover; border-radius: 6px; display: none; margin-top: 10px; }
   .modal-footer { padding: 1rem 1.75rem; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; }
   .modal.modal-sm { width: 480px; }
+  .capital-update-line { font-size: 12px; color: var(--text-secondary); line-height: 1.5; min-height: 18px; }
+  .capital-update-line.positive { color: var(--green); }
+  .capital-update-line.negative { color: var(--red); }
+  .capital-update-note { font-size: 11.5px; color: var(--text-muted); line-height: 1.5; margin-top: 1rem; }
+  .capital-rebase-row { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: var(--text-primary); cursor: pointer; }
+  .capital-rebase-row input[type="checkbox"] { margin-top: 2px; accent-color: var(--gold); cursor: pointer; }
   .notes-modal-text { color: var(--text-primary); font-size: 13.5px; line-height: 1.65; white-space: pre-wrap; }
 
   .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 300; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; }
@@ -252,7 +258,7 @@
           <div class="stat-label" id="label-initial-cap">Capital Inicial Base</div>
           <div class="stat-value neutral" id="stat-initial-cap">—</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card stat-card--editable" id="stat-card-current-cap" onclick="abrirActualizarCapital()" title="Haz clic para actualizar">
           <div class="stat-label" id="label-current-cap">Capital Actual</div>
           <div class="stat-value neutral" id="stat-current-cap">—</div>
         </div>
@@ -451,10 +457,40 @@
         <label class="form-label" id="lbl-capital-input">Capital Inicial Base</label>
         <input type="text" inputmode="decimal" class="form-input" id="f-capital" placeholder="Ej. 10100 o 10100,50" onkeydown="if(event.key==='Enter'){event.preventDefault();guardarCapital();}">
       </div>
+      <div class="capital-update-note" id="capital-initial-note"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" id="btn-capital-cancel" onclick="closeCapitalModal()">Cancelar</button>
       <button class="btn btn-primary" id="btn-capital-save" onclick="guardarCapital()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── MODAL DE ACTUALIZAR CAPITAL ─── -->
+<div class="modal-overlay" id="capitalUpdateModal" onclick="closeCapitalUpdateModalIfOverlay(event)">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <h3 style="font-size:15px;" id="capitalUpdateTitle">Actualizar capital</h3>
+      <button class="action-btn" onclick="closeCapitalUpdateModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group full">
+        <label class="form-label" id="lbl-capital-update-input" for="f-capital-update">Mi capital hoy</label>
+        <input type="text" inputmode="decimal" class="form-input" id="f-capital-update" autocomplete="off" oninput="previewCapitalUpdate()" onkeydown="if(event.key==='Enter'){event.preventDefault();guardarActualizacionCapital();}">
+        <div class="capital-update-line" id="capital-update-adjust"></div>
+      </div>
+      <div class="form-group full" style="margin-top:1rem;">
+        <label class="capital-rebase-row" for="f-capital-rebase">
+          <input type="checkbox" id="f-capital-rebase" onchange="previewCapitalUpdate()">
+          <span id="lbl-capital-rebase">Recalcular 1R desde hoy</span>
+        </label>
+        <div class="capital-update-line" id="capital-update-oner"></div>
+      </div>
+      <div class="capital-update-note" id="capital-update-note"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="btn-capital-update-cancel" onclick="closeCapitalUpdateModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btn-capital-update-save" onclick="guardarActualizacionCapital()">Guardar</button>
     </div>
   </div>
 </div>
@@ -581,6 +617,16 @@ const I18N = {
     capital_invalid: "Por favor, introduce un número válido sin formato raro.",
     edit_capital_title: "Editar Capital Inicial Base",
     edit_capital_hint: "Haz clic para editar",
+    update_capital_title: "Actualizar capital",
+    update_capital_label: "Mi capital hoy",
+    update_capital_hint: "Haz clic para actualizar",
+    update_capital_adjust: "Ajuste: {amount} (no cuenta como beneficio ni pérdida)",
+    update_capital_no_adjust: "Sin ajuste: es tu capital actual.",
+    update_capital_rebase: "Recalcular 1R desde hoy",
+    update_capital_oner_change: "1R: {from} → {to} (1 % de {capital})",
+    update_capital_oner_keep: "1R se mantiene en {amount}",
+    update_capital_note: "Se aplica desde hoy. Los trades anteriores conservan su capital y su 1R.",
+    capital_initial_warning: "Esto corrige el capital de partida y recalcula todo el historial (curva, R y %). Para un cambio de moneda o de capital más adelante, usa «{card}».",
     hide_balance_hint: "Ocultar balance",
     show_balance_hint: "Mostrar balance",
     capital_placeholder: "Ej. 10100 o 10100,50",
@@ -693,6 +739,16 @@ const I18N = {
     capital_invalid: "Please enter a valid number without unusual formatting.",
     edit_capital_title: "Edit Initial Base Capital",
     edit_capital_hint: "Click to edit",
+    update_capital_title: "Update capital",
+    update_capital_label: "My capital today",
+    update_capital_hint: "Click to update",
+    update_capital_adjust: "Adjustment: {amount} (not counted as profit or loss)",
+    update_capital_no_adjust: "No adjustment: this is your current capital.",
+    update_capital_rebase: "Recalculate 1R from today",
+    update_capital_oner_change: "1R: {from} → {to} (1% of {capital})",
+    update_capital_oner_keep: "1R stays at {amount}",
+    update_capital_note: "Applies from today. Earlier trades keep their capital and 1R.",
+    capital_initial_warning: "This corrects your starting capital and recalculates your whole history (curve, R and %). For a currency change or later capital changes, use “{card}”.",
     hide_balance_hint: "Hide balance",
     show_balance_hint: "Show balance",
     capital_placeholder: "e.g. 10100 or 10100.50",
@@ -1337,6 +1393,15 @@ function applyLanguage(newLang) {
   document.getElementById('f-capital').placeholder = i18n('capital_placeholder');
   document.getElementById('btn-capital-cancel').textContent = i18n('cancel');
   document.getElementById('btn-capital-save').textContent = i18n('save');
+  document.getElementById('stat-card-current-cap').title = i18n('update_capital_hint');
+  document.getElementById('capitalUpdateTitle').textContent = i18n('update_capital_title');
+  document.getElementById('lbl-capital-update-input').textContent = i18n('update_capital_label');
+  document.getElementById('lbl-capital-rebase').textContent = i18n('update_capital_rebase');
+  document.getElementById('capital-update-note').textContent = i18n('update_capital_note');
+  document.getElementById('btn-capital-update-cancel').textContent = i18n('cancel');
+  document.getElementById('btn-capital-update-save').textContent = i18n('save');
+  document.getElementById('capital-initial-note').textContent = i18n('capital_initial_warning', { card: i18n('current_capital') });
+  if (document.getElementById('capitalUpdateModal').classList.contains('open')) previewCapitalUpdate();
 
   updateHeaderDate();
   refreshApp();
@@ -1583,6 +1648,88 @@ function guardarCapital() {
     alert(i18n('capital_invalid'));
   }
 }
+
+// ─── Actualizar capital (cambio de capital con fecha de hoy) ───
+function capitalUpdateInputValue() {
+  return parseSpanishOrPlainNumber(document.getElementById('f-capital-update').value);
+}
+
+function abrirActualizarCapital() {
+  const inp = document.getElementById('f-capital-update');
+  // Texto plano con a lo sumo 2 decimales: parseSpanishOrPlainNumber lo lee de vuelta sin ambigüedad.
+  inp.value = String(Math.round(currentCapital() * 100) / 100);
+  document.getElementById('f-capital-rebase').checked = false;   // siempre desmarcada al abrir
+  previewCapitalUpdate();
+  document.getElementById('capitalUpdateModal').classList.add('open');
+  setTimeout(() => { inp.focus(); inp.select(); }, 0);
+}
+
+function closeCapitalUpdateModal() { document.getElementById('capitalUpdateModal').classList.remove('open'); }
+function closeCapitalUpdateModalIfOverlay(e) { if (e.target.id === 'capitalUpdateModal') closeCapitalUpdateModal(); }
+
+function previewCapitalUpdate() {
+  const typed = capitalUpdateInputValue();
+  const valid = !isNaN(typed) && typed > 0;
+  const rebase = document.getElementById('f-capital-rebase').checked;
+  const adjEl = document.getElementById('capital-update-adjust');
+  const oneREl = document.getElementById('capital-update-oner');
+  const money = (n) => `$${fmt(n)}`;     // sin enmascarar: es el propio número del usuario, como en el modal de capital inicial
+
+  adjEl.className = 'capital-update-line';
+  let hasAdjustment = false;
+  if (valid) {
+    const adj = typed - currentCapital();
+    if (Math.abs(adj) < 0.005) {
+      adjEl.textContent = i18n('update_capital_no_adjust');
+    } else {
+      hasAdjustment = true;
+      adjEl.textContent = i18n('update_capital_adjust', { amount: (adj > 0 ? '+' : '-') + money(Math.abs(adj)) });
+      adjEl.classList.add(adj > 0 ? 'positive' : 'negative');
+    }
+  } else {
+    adjEl.textContent = '';
+  }
+
+  const oneRNow = oneRValue();
+  if (rebase) {
+    oneREl.textContent = valid
+      ? i18n('update_capital_oner_change', { from: money(oneRNow), to: money(typed * 0.01), capital: money(typed) })
+      : '';
+  } else {
+    oneREl.textContent = i18n('update_capital_oner_keep', { amount: money(oneRNow) });
+  }
+  // Guardar solo se desactiva cuando el número es válido y no hay nada que registrar.
+  // Con un número no válido queda activo para que Guardar pueda mostrar el aviso de número no válido.
+  document.getElementById('btn-capital-update-save').disabled = valid && !hasAdjustment && !rebase;
+}
+
+function guardarActualizacionCapital() {
+  const typed = capitalUpdateInputValue();
+  if (isNaN(typed) || !(typed > 0)) { alert(i18n('capital_invalid')); return; }
+  const rebase = document.getElementById('f-capital-rebase').checked;
+  // El ajuste se calcula con el capital actual SIN redondear y se guarda tal cual (importe fijo).
+  let adjustment = typed - currentCapital();
+  if (Math.abs(adjustment) < 0.005) adjustment = 0;
+  if (adjustment === 0 && !rebase) return;                       // nada que registrar (Guardar ya está desactivado)
+
+  const lastId = capitalEvents.reduce((m, ev) => Math.max(m, ev.id), 0);
+  const ev = {
+    id: Math.max(Date.now(), lastId + 1),                        // estrictamente creciente: "gana el último" del mismo día
+    date: toDateStr(new Date()),                                 // SIEMPRE hoy y SIEMPRE fecha local; nunca la fecha en UTC
+    capital: typed,
+    adjustment,
+    rebase
+  };
+  const previous = capitalEvents;
+  capitalEvents = sanitizeCapitalEvents([...previous, ev]);
+  if (!saveCapitalEventsToStorage()) { capitalEvents = previous; return; }   // el aviso ya lo muestra saveCapitalEventsToStorage()
+  closeCapitalUpdateModal();
+  refreshApp();
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('capitalUpdateModal').classList.contains('open')) closeCapitalUpdateModal();
+});
 
 function updateStats() {
   const closed = computedTrades.filter(t => t.pnl !== '' && t.pnl !== null);

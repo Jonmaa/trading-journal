@@ -136,6 +136,32 @@ function firstDiff(a, b, p = '') {
   return null;
 }
 
+// Registra cada alert/confirm de la página y lo acepta (o lo descarta con accept:false).
+function watchDialogs(page, { accept = true } = {}) {
+  const rec = { messages: [], types: [] };
+  page.on('dialog', async (d) => {
+    rec.messages.push(d.message()); rec.types.push(d.type());
+    if (accept) await d.accept(); else await d.dismiss();
+  });
+  return rec;
+}
+
+// Hace que localStorage.setItem(key, ...) falle como si el almacenamiento estuviera lleno.
+async function blockStorageKey(page, key) {
+  await page.evaluate((k) => {
+    const orig = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (kk) {
+      if (kk === k) throw new DOMException('quota', 'QuotaExceededError');
+      return orig.apply(this, arguments);
+    };
+  }, key);
+}
+
+// JSON.parse de localStorage[key] (o null si no existe)
+async function readLS(page, key) {
+  return page.evaluate((k) => { const v = localStorage.getItem(k); return v === null ? null : JSON.parse(v); }, key);
+}
+
 const results = { pass: 0, fail: 0 };
 function assert(id, cond, detail) {
   if (cond) { results.pass++; console.log(`PASS ${id}`); }
@@ -147,5 +173,5 @@ function finish() {
 }
 
 module.exports = {
-  ROOT, APP_URL, BASELINE_URL, DEFAULT_NOW, launch, openApp, snapshot, firstDiff, assert, finish, results
+  ROOT, APP_URL, BASELINE_URL, DEFAULT_NOW, launch, openApp, snapshot, firstDiff, assert, finish, results, watchDialogs, blockStorageKey, readLS
 };
