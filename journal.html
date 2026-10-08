@@ -567,6 +567,7 @@ const I18N = {
     corrupted_data: "No se pudieron leer tus operaciones guardadas (los datos parecían estar dañados). Se ha iniciado un historial vacío para que la app no se bloquee; tus datos originales siguen en el almacenamiento del navegador y no se han borrado.",
     storage_full_trade: "No se pudo guardar el cambio: el almacenamiento del navegador está lleno o bloqueado. Esta operación NO se ha guardado — considera exportar tus datos y liberar espacio (p.ej. capturas de pantalla grandes).",
     storage_full_capital: "No se pudo guardar el capital inicial (almacenamiento lleno o bloqueado). El valor no se ha guardado.",
+    storage_full_capital_events: "No se pudo guardar el cambio de capital (almacenamiento lleno o bloqueado). No se ha guardado.",
     remove_image_btn: "Quitar imagen",
     optimize_images_btn: "Optimizar imágenes",
     optimize_images_none: "No hay capturas guardadas para optimizar.",
@@ -678,6 +679,7 @@ const I18N = {
     corrupted_data: "Your saved trades couldn't be read (the data appeared to be corrupted). An empty history has been started so the app doesn't break; your original data is still in the browser's storage and has not been deleted.",
     storage_full_trade: "The change couldn't be saved: the browser's storage is full or blocked. This trade was NOT saved — consider exporting your data and freeing up space (e.g. large screenshots).",
     storage_full_capital: "The initial capital couldn't be saved (storage full or blocked). The value was not saved.",
+    storage_full_capital_events: "The capital change couldn't be saved (storage full or blocked). It was not saved.",
     remove_image_btn: "Remove image",
     optimize_images_btn: "Optimize images",
     optimize_images_none: "There are no saved screenshots to optimize.",
@@ -805,10 +807,11 @@ function calcRMultiple(t) {
 // base configurado (p. ej. con 5000$ de capital, 1R = 50$). Solo el R que se
 // ve en la columna de Historial sigue siendo el R real por trade.
 function oneRValue() {
-  return initialCapital * 0.01;
+  return oneRForDate(toDateStr(new Date()));
 }
-function calcFixedR(pnlDollars) {
-  const oneR = oneRValue();
+// dateStr (opcional): fecha del trade; usa el 1R vigente en esa fecha. Sin fecha, el de hoy.
+function calcFixedR(pnlDollars, dateStr) {
+  const oneR = dateStr ? oneRForDate(dateStr) : oneRValue();
   if (!(oneR > 0)) return null;
   return pnlDollars / oneR;
 }
@@ -816,7 +819,7 @@ function calcFixedR(pnlDollars) {
 // (no entrada/stop/salida), así que todo trade con P&L válido cuenta.
 function calcFixedRForTrade(t) {
   if (t.pnl === '' || t.pnl === null || t.pnl === undefined) return null;
-  return calcFixedR(parseFloat(t.pnl));
+  return calcFixedR(parseFloat(t.pnl), effectiveDate(t));
 }
 
 // Parsea "YYYY-MM-DD" a partir del propio string, sin pasar por new Date()
@@ -853,7 +856,7 @@ function balanceBeforeDate(closed, dateStr) {
     if (effectiveDate(t) >= dateStr) break;
     bal += parseFloat(t.pnl);
   }
-  return bal;
+  return bal + adjustmentsBefore(dateStr);
 }
 
 // Rango [start, hoy] de la semana/mes/año EN CURSO (nunca se dibuja hacia el
@@ -882,10 +885,15 @@ function buildWindowSeries(period, closed) {
   const baselineBalance = balanceBeforeDate(closed, toDateStr(start));
 
   const dailyPnl = new Map();
+  const dailyR = new Map();
   closed.forEach(t => {
     const d = effectiveDate(t);
     dailyPnl.set(d, (dailyPnl.get(d) || 0) + parseFloat(t.pnl));
+    dailyR.set(d, (dailyR.get(d) || 0) + (calcFixedRForTrade(t) || 0));
   });
+  const dailyAdj = new Map();
+  capitalEvents.forEach(ev => dailyAdj.set(ev.date, (dailyAdj.get(ev.date) || 0) + ev.adjustment));
+  let rCum = 0;
 
   const points = [];
   let balance = baselineBalance;
@@ -896,8 +904,10 @@ function buildWindowSeries(period, closed) {
     while (cursor <= end) {
       const dStr = toDateStr(cursor);
       balance += (dailyPnl.get(dStr) || 0);
+      balance += (dailyAdj.get(dStr) || 0);
+      rCum += (dailyR.get(dStr) || 0);
       const label = period === 'week' ? WEEKDAY_LETTERS[lang][i] : String(cursor.getDate());
-      points.push({ value: balance, label });
+      points.push({ value: balance, rValue: rCum, label });
       cursor.setDate(cursor.getDate() + 1);
       i++;
     }
@@ -911,13 +921,16 @@ function buildWindowSeries(period, closed) {
       const realEnd = bucketEnd > end ? end : bucketEnd;
       const d = new Date(cursor);
       while (d <= realEnd) {
-        balance += (dailyPnl.get(toDateStr(d)) || 0);
+        const dKey = toDateStr(d);
+        balance += (dailyPnl.get(dKey) || 0);
+        balance += (dailyAdj.get(dKey) || 0);
+        rCum += (dailyR.get(dKey) || 0);
         d.setDate(d.getDate() + 1);
       }
       const month = cursor.getMonth();
       const label = month !== lastLabeledMonth ? monthNames[month] : null;
       lastLabeledMonth = month;
-      points.push({ value: balance, label });
+      points.push({ value: balance, rValue: rCum, label });
       cursor.setDate(cursor.getDate() + 7);
     }
   }
@@ -933,11 +946,16 @@ function buildTodaySeries(closed) {
   const baselineBalance = balanceBeforeDate(closed, todayStr);
   const todaysTrades = closed.filter(t => effectiveDate(t) === todayStr);
   let balance = baselineBalance;
+  let rCum = 0;
   const points = todaysTrades.map(t => {
     balance += parseFloat(t.pnl);
-    return { value: balance, label: null };
+    rCum += (calcFixedRForTrade(t) || 0);
+    return { value: balance, rValue: rCum, label: null };
   });
-  if (points.length === 0) points.push({ value: baselineBalance, label: null });
+  if (points.length === 0) points.push({ value: baselineBalance, rValue: 0, label: null });
+  // Un cambio de capital de hoy se ve como un escalón después de los trades de hoy (no cuenta en R).
+  const adjToday = adjustmentsOn(todayStr);
+  if (adjToday !== 0) points.push({ value: balance + adjToday, rValue: rCum, label: null, isAdjustment: true });
   return { points, baselineBalance };
 }
 
@@ -984,6 +1002,84 @@ function loadInitialCapital() {
     console.error('Error leyendo capital inicial:', e);
     return 50000;
   }
+}
+
+// ─── Historial de capital (Fase 1) ───
+// Cada evento: { id, date:'YYYY-MM-DD', capital, adjustment, rebase }.
+//  - adjustment: importe fijo que se suma al capital desde esa fecha (NO es P&L).
+//  - rebase: si es true, el capital indicado pasa a ser la base del 1R y de los %.
+// tradelog_initial_cap y tradelog_trades no se tocan nunca desde aquí.
+const CAPITAL_EVENTS_KEY = 'tradelog_capital_events';
+
+function sanitizeCapitalEvents(list) {
+  return list
+    .filter(ev => ev && /^\d{4}-\d{2}-\d{2}$/.test(ev.date)
+      && Number.isFinite(Number(ev.capital)) && Number(ev.capital) > 0
+      && Number.isFinite(Number(ev.adjustment))
+      && ev.id !== null && ev.id !== '' && Number.isFinite(Number(ev.id)))
+    .map(ev => ({ id: Number(ev.id), date: ev.date, capital: Number(ev.capital),
+                  adjustment: Number(ev.adjustment), rebase: ev.rebase === true }))
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.id - b.id));
+}
+
+function loadCapitalEvents() {
+  try {
+    const raw = localStorage.getItem(CAPITAL_EVENTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) throw new Error('capital events is not an array');
+    return sanitizeCapitalEvents(parsed);
+  } catch (e) {
+    console.error('Error leyendo cambios de capital:', e);
+    return [];
+  }
+}
+
+function saveCapitalEventsToStorage() {
+  try {
+    localStorage.setItem(CAPITAL_EVENTS_KEY, JSON.stringify(capitalEvents));
+    return true;
+  } catch (e) {
+    console.error('Error guardando cambios de capital:', e);
+    alert(i18n('storage_full_capital_events'));
+    return false;
+  }
+}
+
+// Base de capital vigente en una fecha: la del último evento con rebase y fecha <= D
+// (capitalEvents va ordenado por fecha y luego id); si no hay, el capital inicial.
+function baseCapitalForDate(dateStr) {
+  let base = initialCapital;
+  for (const ev of capitalEvents) {
+    if (ev.date > dateStr) break;
+    if (ev.rebase) base = ev.capital;
+  }
+  return base;
+}
+function oneRForDate(dateStr) { return baseCapitalForDate(dateStr) * 0.01; }
+function adjustmentsBefore(dateStr) { return capitalEvents.reduce((s, ev) => ev.date <  dateStr ? s + ev.adjustment : s, 0); }
+function adjustmentsOn(dateStr)     { return capitalEvents.reduce((s, ev) => ev.date === dateStr ? s + ev.adjustment : s, 0); }
+
+// Capital actual. Sin eventos devuelve exactamente lo que se calculaba antes (finalCap del último trade cerrado).
+function currentCapital() {
+  const closed = computedTrades.filter(t => t.pnl !== '' && t.pnl !== null);
+  if (!capitalEvents.length) return closed.length ? closed[closed.length - 1].finalCap : initialCapital;
+  return initialCapital
+    + capitalEvents.reduce((s, ev) => s + ev.adjustment, 0)
+    + closed.reduce((s, t) => s + parseFloat(t.pnl), 0);
+}
+
+// Rentabilidad % de un conjunto de trades: suma de pnl/base agrupando por la base vigente en la fecha de cada trade.
+// Con una sola base (sin eventos) es exactamente (suma de pnl / capital inicial) * 100, como antes.
+function pctReturn(tradeList) {
+  const byBase = new Map();
+  tradeList.forEach(t => {
+    const b = baseCapitalForDate(effectiveDate(t));
+    byBase.set(b, (byBase.get(b) || 0) + parseFloat(t.pnl));
+  });
+  let pct = 0;
+  byBase.forEach((pnlSum, base) => { pct += (pnlSum / base) * 100; });
+  return pct;
 }
 
 function loadTrades() {
@@ -1123,6 +1219,7 @@ function importData(event) {
 }
 
 let initialCapital = loadInitialCapital();
+let capitalEvents = loadCapitalEvents();
 let trades = loadTrades();
 let computedTrades = [];
 let editingId = null;
@@ -1489,7 +1586,7 @@ function guardarCapital() {
 
 function updateStats() {
   const closed = computedTrades.filter(t => t.pnl !== '' && t.pnl !== null);
-  const currentCap = closed.length ? closed[closed.length - 1].finalCap : initialCapital;
+  const currentCap = currentCapital();
   
   setEl('stat-initial-cap', masked(`$${fmt(initialCapital)}`));
   setEl('stat-current-cap', masked(`$${fmt(currentCap)}`));
@@ -1574,6 +1671,8 @@ function updateStats() {
   // Vista en $ (por defecto)
   let ytdPnl = 0;
   let monthPnl = 0;
+  const ytdTrades = [];
+  const monthTrades = [];
   const monthlyData = {}; 
 
   closed.forEach(t => {
@@ -1582,19 +1681,21 @@ function updateStats() {
     
     if (y === cYear) {
       ytdPnl += p;
-      if (m === cMonth) monthPnl += p;
+      ytdTrades.push(t);
+      if (m === cMonth) { monthPnl += p; monthTrades.push(t); }
     }
     
     const monthKey = `${y}-${String(m).padStart(2, '0')}`;
-    if(!monthlyData[monthKey]) monthlyData[monthKey] = { pnl: 0, year: y, month: m };
+    if(!monthlyData[monthKey]) monthlyData[monthKey] = { pnl: 0, year: y, month: m, trades: [] };
     monthlyData[monthKey].pnl += p;
+    monthlyData[monthKey].trades.push(t);
   });
 
-  const ytdPct = (ytdPnl / initialCapital) * 100;
+  const ytdPct = pctReturn(ytdTrades);
   setEl('stat-ytd-pct', `${ytdPct >= 0 ? '+' : ''}${fmt(ytdPct)}%`, ytdPct >= 0 ? 'positive' : 'negative');
   document.getElementById('stat-ytd-sub').textContent = `${i18n('net_ytd')}${masked(`${ytdPnl >= 0 ? '+' : '-'}$${fmt(Math.abs(ytdPnl))}`)}`;
 
-  const monthPct = (monthPnl / initialCapital) * 100;
+  const monthPct = pctReturn(monthTrades);
   setEl('stat-month-pct', `${monthPct >= 0 ? '+' : ''}${fmt(monthPct)}%`, monthPct >= 0 ? 'positive' : 'negative');
   document.getElementById('stat-month-sub').textContent = `${i18n('net_month')}${masked(`${monthPnl >= 0 ? '+' : '-'}$${fmt(Math.abs(monthPnl))}`)}`;
 
@@ -1606,7 +1707,7 @@ function updateStats() {
     mTable.innerHTML = sortedMonths.map(key => {
       const data = monthlyData[key];
       const pnlUSD = data.pnl;
-      const pctRentabilidad = (pnlUSD / initialCapital) * 100; 
+      const pctRentabilidad = pctReturn(data.trades); 
       
       const prefix = pnlUSD >= 0 ? '+' : '';
       
@@ -1665,7 +1766,7 @@ function computeCalendarMonthTotal() {
     return year === currentYear && month === currentMonth;
   });
   if (calendarMode === 'r') {
-    const total = monthTrades.reduce((sum, t) => sum + (calcFixedR(parseFloat(t.pnl)) || 0), 0);
+    const total = monthTrades.reduce((sum, t) => sum + (calcFixedR(parseFloat(t.pnl), effectiveDate(t)) || 0), 0);
     return { total, hasData: monthTrades.length > 0 };
   }
   const total = monthTrades.reduce((sum, t) => sum + parseFloat(t.pnl), 0);
@@ -1725,7 +1826,7 @@ function renderCalendar() {
 
       if (calendarMode === 'r') {
         const dayPnl = dayTrades.reduce((sum, t) => sum + parseFloat(t.pnl), 0);
-        const dayR = dayTrades.length > 0 ? calcFixedR(dayPnl) : null;
+        const dayR = dayTrades.length > 0 ? calcFixedR(dayPnl, dStr) : null;
         if (dayR !== null) {
           weekTotal += dayR; weekHasData = true;
           const cls = dayR > 0 ? 'win' : (dayR < 0 ? 'loss' : 'neutral');
@@ -2203,42 +2304,54 @@ function deleteTrade(id) {
   }
 }
 
-function renderChart() {
-  const canvas = document.getElementById('equityChart');
-  const ctx = canvas.getContext('2d');
+// Puntos de la curva de equidad / R de un periodo ('today'|'week'|'month'|'year'|'all') y modo ('usd'|'r').
+// Devuelve { points, baseline, labels }, o null si no hay datos que dibujar.
+// Los cambios de capital (ajustes) suben o bajan la curva en $ pero nunca entran en la curva en R.
+function buildEquityPoints(period, mode) {
   const closed = computedTrades.filter(t => t.pnl !== '' && t.pnl !== null);
-
-  document.getElementById('chart-title').textContent = statsMode === 'r' ? i18n('r_curve') : i18n('equity_curve');
-  const legendEl = document.getElementById('chart-legend-text');
-  if (legendEl) legendEl.textContent = windowRangeLabel(chartPeriod);
-
   let points, baseline, labels;
-  if (chartPeriod === 'all') {
+  if (period === 'all') {
     // Todo el histórico, trade a trade: sin fecha fija por punto (cada uno es
     // una operación, no un día del calendario), así que no lleva etiquetas en
     // el eje X.
-    if (statsMode === 'r') {
+    if (mode === 'r') {
       const rSeries = closed.map(t => calcFixedRForTrade(t)).filter(r => r !== null);
-      if (rSeries.length < 1) { canvas.width = canvas.offsetWidth; canvas.height = 320; return; }
+      if (rSeries.length < 1) return null;
       baseline = 0;
       points = [0];
       let cum = 0;
       rSeries.forEach(r => { cum += r; points.push(cum); });
     } else {
-      if (closed.length < 1) { canvas.width = canvas.offsetWidth; canvas.height = 320; return; }
+      if (closed.length < 1) return null;
       baseline = initialCapital;
-      points = [initialCapital, ...closed.map(t => t.finalCap)];
+      if (!capitalEvents.length) {
+        points = [initialCapital, ...closed.map(t => t.finalCap)];
+      } else {
+        // Mismo orden de trades que sin eventos; cada ajuste se coloca justo después del último
+        // trade cuya fecha de cierre efectiva es <= la fecha del evento (escalón igual al ajuste).
+        points = [initialCapital];
+        let balance = initialCapital;
+        const posOf = capitalEvents.map(ev => {
+          let pos = -1;
+          closed.forEach((t, i) => { if (effectiveDate(t) <= ev.date) pos = i; });
+          return pos;
+        });
+        const applyEventsAt = (pos) => capitalEvents.forEach((ev, k) => {
+          if (posOf[k] === pos && ev.adjustment !== 0) { balance += ev.adjustment; points.push(balance); }
+        });
+        applyEventsAt(-1);
+        closed.forEach((t, i) => { balance += parseFloat(t.pnl); points.push(balance); applyEventsAt(i); });
+      }
     }
     labels = points.map(() => null);
-  } else if (chartPeriod === 'today') {
+  } else if (period === 'today') {
     // Hoy: los trades cerrados hoy, uno a uno, arrancando del capital que
     // había antes de hoy. Tampoco lleva etiquetas de fecha (no hay hora
     // guardada por trade, solo la fecha).
     const { points: winPoints, baselineBalance } = buildTodaySeries(closed);
-    const oneR = oneRValue();
-    if (statsMode === 'r') {
+    if (mode === 'r') {
       baseline = 0;
-      points = [0, ...winPoints.map(p => (oneR > 0 ? (p.value - baselineBalance) / oneR : 0))];
+      points = [0, ...winPoints.filter(p => !p.isAdjustment).map(p => p.rValue)];
     } else {
       baseline = baselineBalance;
       points = [baselineBalance, ...winPoints.map(p => p.value)];
@@ -2249,17 +2362,30 @@ function renderChart() {
     // bloques de 7 días para el año), arrastrando el capital aunque ese
     // día/semana no tenga trades — así se ve como una curva real, no puntos
     // sueltos.
-    const { points: winPoints, baselineBalance } = buildWindowSeries(chartPeriod, closed);
-    const oneR = oneRValue();
-    if (statsMode === 'r') {
+    const { points: winPoints, baselineBalance } = buildWindowSeries(period, closed);
+    if (mode === 'r') {
       baseline = 0;
-      points = [0, ...winPoints.map(p => (oneR > 0 ? (p.value - baselineBalance) / oneR : 0))];
+      points = [0, ...winPoints.map(p => p.rValue)];
     } else {
       baseline = baselineBalance;
       points = [baselineBalance, ...winPoints.map(p => p.value)];
     }
     labels = [null, ...winPoints.map(p => p.label)];
   }
+  return { points, baseline, labels };
+}
+
+function renderChart() {
+  const canvas = document.getElementById('equityChart');
+  const ctx = canvas.getContext('2d');
+
+  document.getElementById('chart-title').textContent = statsMode === 'r' ? i18n('r_curve') : i18n('equity_curve');
+  const legendEl = document.getElementById('chart-legend-text');
+  if (legendEl) legendEl.textContent = windowRangeLabel(chartPeriod);
+
+  const built = buildEquityPoints(chartPeriod, statsMode);
+  if (!built) { canvas.width = canvas.offsetWidth; canvas.height = 320; return; }
+  const { points, baseline, labels } = built;
 
   const W = canvas.offsetWidth;
   const H = 320;
