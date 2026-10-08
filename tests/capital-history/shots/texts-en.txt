@@ -1,0 +1,42 @@
+# Textos nuevos de la Fase 1 — idioma: en  ("hoy" = 08/10/2026)
+
+## Claves nuevas (con sus marcadores {…})
+storage_full_capital_events: The capital change couldn't be saved (storage full or blocked). It was not saved.
+update_capital_title: Update capital
+update_capital_label: My capital today
+update_capital_hint: Click to update
+update_capital_adjust: Adjustment: {amount} (not counted as profit or loss)
+update_capital_no_adjust: No adjustment: this is your current capital.
+update_capital_rebase: Recalculate 1R from today
+update_capital_oner_change: 1R: {from} → {to} (1% of {capital})
+update_capital_oner_keep: 1R stays at {amount}
+update_capital_note: Applies from today. Earlier trades keep their capital and 1R.
+capital_initial_warning: This corrects your starting capital and recalculates your whole history (curve, R and %). For a currency change or later capital changes, use “{card}”.
+capital_history_title: Capital changes
+capital_history_empty: No capital changes recorded yet.
+capital_event_capital: Capital {amount}
+capital_event_adjustment: Adjustment {amount}
+capital_event_oner: 1R {amount}
+capital_event_oner_none: 1R —
+capital_event_delete_hint: Delete this capital change
+capital_event_delete_confirm: Delete the capital change of {date} (capital {capital}, adjustment {adjustment})? Figures will go back to what they were without it. Your trades are not modified.
+
+## Lo que ve el usuario (diálogo "Actualizar capital" con 7000 escrito y 1R recalculado)
+Título: Update capital
+Etiqueta: My capital today
+Línea de ajuste: Adjustment: +$950.00 (not counted as profit or loss)
+Línea de 1R: 1R: $60.00 → $70.00 (1% of $7,000.00)
+Aviso: Applies from today. Earlier trades keep their capital and 1R.
+Tooltip de la tarjeta Capital Actual: Click to update
+
+## Lista "Capital changes" (más reciente primero; fecha | capital | ajuste | 1R)
+10/08/26 | Capital $6,000.00 | Adjustment +$660.00 | 1R $60.00
+09/20/26 | Capital $5,000.00 | Adjustment -$150.00 | 1R $50.00
+09/01/26 | Capital $5,200.00 | Adjustment +$200.00 | 1R —
+Tooltip del botón de borrar: Delete this capital change
+
+## Confirmación al pulsar borrar en la fila del 08/10
+Delete the capital change of 10/08/26 (capital $6,000.00, adjustment +$660.00)? Figures will go back to what they were without it. Your trades are not modified.
+
+## Aviso en el modal de capital inicial
+This corrects your starting capital and recalculates your whole history (curve, R and %). For a currency change or later capital changes, use “Current Capital”.

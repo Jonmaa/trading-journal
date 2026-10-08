@@ -158,6 +158,18 @@
   .capital-update-note { font-size: 11.5px; color: var(--text-muted); line-height: 1.5; margin-top: 1rem; }
   .capital-rebase-row { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: var(--text-primary); cursor: pointer; }
   .capital-rebase-row input[type="checkbox"] { margin-top: 2px; accent-color: var(--gold); cursor: pointer; }
+  .capital-history { margin-top: 1.25rem; border-top: 1px solid var(--border); padding-top: 1rem; }
+  .capital-history-title { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 8px; }
+  .capital-history-list { display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow-y: auto; }
+  .capital-history-empty { font-size: 12px; color: var(--text-muted); }
+  .capital-event-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 8px 10px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; font-size: 12px; }
+  .capital-event-main { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+  .capital-event-date { font-family: var(--mono); color: var(--text-secondary); }
+  .capital-event-capital { color: var(--text-primary); font-weight: 600; }
+  .capital-event-sub { grid-column: 1; display: flex; flex-wrap: wrap; gap: 2px 12px; font-family: var(--mono); font-size: 11.5px; color: var(--text-secondary); }
+  .capital-event-adjustment.positive { color: var(--green); }
+  .capital-event-adjustment.negative { color: var(--red); }
+  .capital-event-row .row-action-btn { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
   .notes-modal-text { color: var(--text-primary); font-size: 13.5px; line-height: 1.65; white-space: pre-wrap; }
 
   .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 300; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; }
@@ -487,6 +499,10 @@
         <div class="capital-update-line" id="capital-update-oner"></div>
       </div>
       <div class="capital-update-note" id="capital-update-note"></div>
+      <div class="capital-history">
+        <div class="capital-history-title" id="capital-history-title">Cambios de capital</div>
+        <div class="capital-history-list" id="capital-history-list"></div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" id="btn-capital-update-cancel" onclick="closeCapitalUpdateModal()">Cancelar</button>
@@ -617,6 +633,14 @@ const I18N = {
     capital_invalid: "Por favor, introduce un número válido sin formato raro.",
     edit_capital_title: "Editar Capital Inicial Base",
     edit_capital_hint: "Haz clic para editar",
+    capital_history_title: "Cambios de capital",
+    capital_history_empty: "Todavía no has registrado ningún cambio de capital.",
+    capital_event_capital: "Capital {amount}",
+    capital_event_adjustment: "Ajuste {amount}",
+    capital_event_oner: "1R {amount}",
+    capital_event_oner_none: "1R —",
+    capital_event_delete_hint: "Borrar este cambio de capital",
+    capital_event_delete_confirm: "¿Borrar el cambio de capital del {date} (capital {capital}, ajuste {adjustment})? Las cifras volverán a ser las que había sin él. Tus trades no se modifican.",
     update_capital_title: "Actualizar capital",
     update_capital_label: "Mi capital hoy",
     update_capital_hint: "Haz clic para actualizar",
@@ -739,6 +763,14 @@ const I18N = {
     capital_invalid: "Please enter a valid number without unusual formatting.",
     edit_capital_title: "Edit Initial Base Capital",
     edit_capital_hint: "Click to edit",
+    capital_history_title: "Capital changes",
+    capital_history_empty: "No capital changes recorded yet.",
+    capital_event_capital: "Capital {amount}",
+    capital_event_adjustment: "Adjustment {amount}",
+    capital_event_oner: "1R {amount}",
+    capital_event_oner_none: "1R —",
+    capital_event_delete_hint: "Delete this capital change",
+    capital_event_delete_confirm: "Delete the capital change of {date} (capital {capital}, adjustment {adjustment})? Figures will go back to what they were without it. Your trades are not modified.",
     update_capital_title: "Update capital",
     update_capital_label: "My capital today",
     update_capital_hint: "Click to update",
@@ -1197,6 +1229,7 @@ async function exportData() {
     app: 'Trading Diary',
     exportedAt: new Date().toISOString(),
     initialCapital: initialCapital,
+    capitalEvents: capitalEvents.map(ev => ({ ...ev })),
     trades: tradesForExport
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -1235,6 +1268,7 @@ function importData(event) {
     }
     const previousTrades = trades;
     const previousCapital = initialCapital;
+    const previousCapitalEvents = capitalEvents;
 
     // El backup trae las capturas en base64 (formato portable); se guardan en
     // IndexedDB igual que las nuevas, y el trade importado solo se queda con
@@ -1259,11 +1293,15 @@ function importData(event) {
     if (typeof payload.initialCapital === 'number' && payload.initialCapital > 0) {
       initialCapital = payload.initialCapital;
     }
+    // Un backup antiguo no trae cambios de capital: la lista queda vacía. Si trae algo raro, se sanea igual que al arrancar.
+    capitalEvents = Array.isArray(payload.capitalEvents) ? sanitizeCapitalEvents(payload.capitalEvents) : [];
     const okTrades = saveTradesToStorage();
     const okCapital = saveCapitalToStorage(initialCapital);
-    if (!okTrades || !okCapital) {
+    const okEvents = saveCapitalEventsToStorage();
+    if (!okTrades || !okCapital || !okEvents) {
       trades = previousTrades;
       initialCapital = previousCapital;
+      capitalEvents = previousCapitalEvents;
       event.target.value = '';
       return;
     }
@@ -1401,6 +1439,7 @@ function applyLanguage(newLang) {
   document.getElementById('btn-capital-update-cancel').textContent = i18n('cancel');
   document.getElementById('btn-capital-update-save').textContent = i18n('save');
   document.getElementById('capital-initial-note').textContent = i18n('capital_initial_warning', { card: i18n('current_capital') });
+  document.getElementById('capital-history-title').textContent = i18n('capital_history_title');
   if (document.getElementById('capitalUpdateModal').classList.contains('open')) previewCapitalUpdate();
 
   updateHeaderDate();
@@ -1432,6 +1471,7 @@ function refreshApp() {
   renderTable();
   if(document.getElementById('tab-stats').classList.contains('active')){ updateStats(); renderChart(); }
   if(document.getElementById('tab-calendar').classList.contains('active')) renderCalendar();
+  renderCapitalEventsList();
 }
 
 function updateSetupOptions() {
@@ -1664,12 +1704,17 @@ function abrirActualizarCapital() {
   setTimeout(() => { inp.focus(); inp.select(); }, 0);
 }
 
-function closeCapitalUpdateModal() { document.getElementById('capitalUpdateModal').classList.remove('open'); }
+function closeCapitalUpdateModal() {
+  const modal = document.getElementById('capitalUpdateModal');
+  modal.classList.remove('open');
+  // Sin foco dentro del modal cerrado: un Enter posterior ya no puede guardar otra vez.
+  if (document.activeElement && modal.contains(document.activeElement)) document.activeElement.blur();
+}
 function closeCapitalUpdateModalIfOverlay(e) { if (e.target.id === 'capitalUpdateModal') closeCapitalUpdateModal(); }
 
 function previewCapitalUpdate() {
   const typed = capitalUpdateInputValue();
-  const valid = !isNaN(typed) && typed > 0;
+  const valid = Number.isFinite(typed) && typed > 0;
   const rebase = document.getElementById('f-capital-rebase').checked;
   const adjEl = document.getElementById('capital-update-adjust');
   const oneREl = document.getElementById('capital-update-oner');
@@ -1704,8 +1749,9 @@ function previewCapitalUpdate() {
 }
 
 function guardarActualizacionCapital() {
+  if (!document.getElementById('capitalUpdateModal').classList.contains('open')) return;   // modal cerrado: nada que guardar
   const typed = capitalUpdateInputValue();
-  if (isNaN(typed) || !(typed > 0)) { alert(i18n('capital_invalid')); return; }
+  if (!Number.isFinite(typed) || !(typed > 0)) { alert(i18n('capital_invalid')); return; }
   const rebase = document.getElementById('f-capital-rebase').checked;
   // El ajuste se calcula con el capital actual SIN redondear y se guarda tal cual (importe fijo).
   let adjustment = typed - currentCapital();
@@ -1725,6 +1771,53 @@ function guardarActualizacionCapital() {
   if (!saveCapitalEventsToStorage()) { capitalEvents = previous; return; }   // el aviso ya lo muestra saveCapitalEventsToStorage()
   closeCapitalUpdateModal();
   refreshApp();
+}
+
+// Copia exacta del icono de papelera del botón de borrar de la tabla de operaciones.
+const CAPITAL_EVENT_TRASH_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>';
+
+// Importes de la lista y de la confirmación: pasan siempre por masked() (modo "ocultar balance").
+function eventMoney(n) { return masked(`$${fmt(n)}`); }
+function eventSignedMoney(n) { return masked((n > 0 ? '+' : n < 0 ? '-' : '') + `$${fmt(Math.abs(n))}`); }
+
+function renderCapitalEventsList() {
+  const el = document.getElementById('capital-history-list');
+  if (!el) return;
+  if (!capitalEvents.length) {
+    el.innerHTML = `<div class="capital-history-empty">${i18n('capital_history_empty')}</div>`;
+    return;
+  }
+  // capitalEvents va ordenado por fecha y luego id, de más antiguo a más reciente: se muestra al revés.
+  el.innerHTML = [...capitalEvents].reverse().map(ev => {
+    const cls = ev.adjustment > 0 ? ' positive' : (ev.adjustment < 0 ? ' negative' : '');
+    const oneR = ev.rebase
+      ? i18n('capital_event_oner', { amount: eventMoney(ev.capital * 0.01) })
+      : i18n('capital_event_oner_none');
+    return `<div class="capital-event-row" data-event-id="${ev.id}">
+      <div class="capital-event-main">
+        <span class="capital-event-date">${formatDate(ev.date)}</span>
+        <span class="capital-event-capital">${i18n('capital_event_capital', { amount: eventMoney(ev.capital) })}</span>
+      </div>
+      <button class="row-action-btn danger" onclick="deleteCapitalEvent(${ev.id})" title="${i18n('capital_event_delete_hint')}">${CAPITAL_EVENT_TRASH_SVG}</button>
+      <div class="capital-event-sub">
+        <span class="capital-event-adjustment${cls}">${i18n('capital_event_adjustment', { amount: eventSignedMoney(ev.adjustment) })}</span>
+        <span class="capital-event-oner">${oneR}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function deleteCapitalEvent(id) {
+  const ev = capitalEvents.find(e => e.id === id);
+  if (!ev) return;
+  if (!confirm(i18n('capital_event_delete_confirm', {
+    date: formatDate(ev.date), capital: eventMoney(ev.capital), adjustment: eventSignedMoney(ev.adjustment)
+  }))) return;                                                  // Cancelar: no cambia nada
+  const previous = capitalEvents;
+  capitalEvents = previous.filter(e => e.id !== id);
+  if (!saveCapitalEventsToStorage()) { capitalEvents = previous; return; }
+  refreshApp();                                                // vuelve a calcular todo y redibuja la lista
+  if (document.getElementById('capitalUpdateModal').classList.contains('open')) previewCapitalUpdate();
 }
 
 document.addEventListener('keydown', (e) => {

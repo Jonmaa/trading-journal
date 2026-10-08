@@ -162,6 +162,29 @@ async function readLS(page, key) {
   return page.evaluate((k) => { const v = localStorage.getItem(k); return v === null ? null : JSON.parse(v); }, key);
 }
 
+const os = require('os');
+
+// Ejecuta exportData() en la página y devuelve { path, json } del fichero descargado.
+async function downloadExport(page) {
+  const [download] = await Promise.all([page.waitForEvent('download'), page.evaluate(() => { exportData(); })]);
+  const file = path.join(os.tmpdir(), `capital-history-export-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+  await download.saveAs(file);
+  return { path: file, json: JSON.parse(fs.readFileSync(file, 'utf8')) };
+}
+
+// Escribe un JSON en un fichero temporal (para importarlo).
+function writeTempJSON(obj) {
+  const file = path.join(os.tmpdir(), `capital-history-import-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+  fs.writeFileSync(file, JSON.stringify(obj));
+  return file;
+}
+
+// Importa un fichero JSON por el input oculto de la app (los diálogos los gestiona watchDialogs).
+async function importFile(page, file) {
+  await page.setInputFiles('input[type="file"][accept="application/json"]', file);
+  await page.waitForTimeout(700);
+}
+
 const results = { pass: 0, fail: 0 };
 function assert(id, cond, detail) {
   if (cond) { results.pass++; console.log(`PASS ${id}`); }
@@ -173,5 +196,5 @@ function finish() {
 }
 
 module.exports = {
-  ROOT, APP_URL, BASELINE_URL, DEFAULT_NOW, launch, openApp, snapshot, firstDiff, assert, finish, results, watchDialogs, blockStorageKey, readLS
+  ROOT, APP_URL, BASELINE_URL, DEFAULT_NOW, launch, openApp, snapshot, firstDiff, assert, finish, results, watchDialogs, blockStorageKey, readLS, downloadExport, writeTempJSON, importFile
 };

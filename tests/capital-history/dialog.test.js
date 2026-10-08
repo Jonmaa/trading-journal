@@ -87,7 +87,7 @@ const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
     const d = watchDialogs(p);
     await openDialog(p);
     const problems = [];
-    for (const v of ['', ' ', 'abc', '0', '-100']) {
+    for (const v of ['', ' ', 'abc', '0', '-100', 'Infinity']) {
       const before = d.messages.length;
       await p.fill('#f-capital-update', v);
       await p.click('#btn-capital-update-save');
@@ -298,6 +298,15 @@ const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
     if (await isOpen(p)) problems.push('overlay no cierra');
     // Escape con el modal cerrado: no pasa nada
     await p.keyboard.press('Escape');
+    // Enter repetido tras guardar con el modal ya cerrado: solo se crea un evento
+    await openDialog(p); await p.fill('#f-capital-update', '6000'); await p.check('#f-capital-rebase');
+    await p.press('#f-capital-update', 'Enter');
+    await p.waitForTimeout(150);
+    await p.keyboard.press('Enter'); await p.keyboard.press('Enter');
+    await p.waitForTimeout(150);
+    const nAfterRepeat = (await events(p)).length;
+    if (nAfterRepeat !== 1) problems.push('Enter repetido crea ' + nAfterRepeat + ' eventos');
+    await p.evaluate(() => { capitalEvents = []; localStorage.removeItem('tradelog_capital_events'); refreshApp(); });
     const n = (await events(p)).length;
     const ls = await p.evaluate(() => localStorage.getItem('tradelog_capital_events'));
     const snap1 = await p.evaluate(() => ({ trades: localStorage.getItem('tradelog_trades'), cap: localStorage.getItem('tradelog_initial_cap') }));
